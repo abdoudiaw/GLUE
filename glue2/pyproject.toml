@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "glue2"
+version = "0.1.0"
+description = "GLUE v2: active-learning data plane for the SOLPS-ITER B2.5-EIRENE seam"
+authors = [{ name = "Abdourahmane Diaw" }]
+license = { text = "BSD-3-Clause" }
+requires-python = ">=3.10"
+dependencies = ["numpy", "netCDF4", "pyyaml"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+glue2 = "glue2.cli:main"
+
+[tool.setuptools]
+packages = ["glue2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

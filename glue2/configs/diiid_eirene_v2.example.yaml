@@ -1,0 +1,46 @@
+# GLUE v2 loop for the DIII-D EIRENE training campaign (schema v2 events).
+# Keep `workdir` (catalog + snapshots + bundles) on a local disk, not NFS.
+
+workdir: /home/cloud/glue2/diiid_eirene_v2
+ingest_roots:
+  - /home/cloud/solps-runs/diii-d/eirene_training_campaign_v2   # campaign output
+  - /home/cloud/glue2/diiid_eirene_v2/inbox                     # teacher answers
+settle_seconds: 120          # the Fortran writer creates files in place
+
+spec:
+  event_kinds: [single_call]       # average_used_by_b2 is a derived reduction
+  val_fraction: 0.15
+  test_fraction: 0.15
+  dtype: float32
+  inputs:                          # BRAEIR background + per-stratum call controls
+    - braeir_dni
+    - braeir_uu
+    - braeir_vv
+    - braeir_te
+    - braeir_ti
+    - braeir_po
+    - braeir_vol
+    - b2_tflux
+    - b2_flux_scale
+  targets:                         # first slice; extend after the variable classification
+    - eirbra_sni
+    - eirbra_smo
+    - eirbra_see
+    - eirbra_sei
+    - wneutrals_dab2
+    - wneutrals_tab2
+    - wneutrals_dmb2
+    - wneutrals_tmb2
+
+learner: pca_ridge                 # baseline; SOLSTICE registers its own learner name
+learner_params: {members: 8, degree: 2}
+retrain_min_new: 50
+batch_size: 8
+max_open_requests: 32
+promote_tolerance: 0.05
+
+# Simulated active learning against held-back archive cases:
+# pool: {root: /home/cloud/glue2/diiid_eirene_v2/heldout}
+# teacher: {kind: simulated, inbox: /home/cloud/glue2/diiid_eirene_v2/inbox}
+# Real requests for the campaign runner:
+# teacher: {kind: spool, spool: /home/cloud/glue2/diiid_eirene_v2/requests}

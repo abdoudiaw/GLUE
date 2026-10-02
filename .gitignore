@@ -17,3 +17,8 @@ alTester_serial
 sniffTest_fortranBGK
 stressTest_analyticICF
 stressTest_analyticICF_collective
+
+# glue2
+glue2/work/
+*.egg-info
+.pytest_cache

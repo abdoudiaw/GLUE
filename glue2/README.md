@@ -1,0 +1,76 @@
+# GLUE v2 — active learning at the B2.5–EIRENE seam
+
+GLUE v2 keeps the GLUE active-learning cycle — predict, gate on uncertainty,
+request a fine-grain answer, accumulate ground truth, retrain, version — and
+replaces its plumbing for SOLPS-ITER. The fine-grain answer is the EIRENE
+return at `eirene_eirsrt` (schema-v2 training events); the model library is
+SOLSTICE (through the `Learner` interface).
+
+## What changed from GLUE v1, and why
+
+GLUE v1 used SQLite as a message bus. Solver ranks inserted requests, the
+service polled them, fine-grain jobs wrote another database that was merged
+back, and retraining read the live tables. Several processes wrote one SQLite
+file, often on a shared filesystem, which caused the persistent locking
+failures.
+
+| v1 | v2 |
+|---|---|
+| `BGKGND` rows hold the ground truth | Immutable event `.nc` files are the ground truth |
+| Many writers, polling readers | One writer (lock file, fails fast); readers open read-only |
+| Requests/results polled through SQLite | Nothing on the B2 iteration path; requests are rare, per cycle |
+| Slurm-launched LAMMPS fine-grain jobs | A `Teacher` drops event files into an inbox |
+| `retrain(dbHandle)` on live tables | Training reads a frozen, content-addressed snapshot |
+| Learner swapped in during a run | Immutable bundles; promotion gated on held-out tests |
+| Scalar SQL columns | Arrays stay in NetCDF; the catalog has one row per event |
+
+## Layout
+
+```
+workdir/
+  catalog.sqlite          events, rejected, requests, snapshots, bundles, audit
+  snapshots/<id>/         data.nc (sample-stacked, float32) + manifest.json
+  bundles/<id>/           bundle.json + learner arrays
+```
+
+## The cycle (`glue2.loop.GlueLoop.cycle`)
+
+1. **Ingest** new event files. Files younger than `settle_seconds` are skipped,
+   because the Fortran writer creates them in place. Invalid files go to
+   `rejected` and are retried only if they change. Byte-identical copies are
+   recorded once. An event whose background hash matches a request fulfils it.
+2. **Retrain** once `retrain_min_new` new events exist. This freezes a snapshot,
+   fits a candidate, and evaluates it on `test` (seed distribution) and
+   `acq_test` (held-out acquired cases). The candidate is promoted only if
+   neither split regresses beyond `promote_tolerance` and at least one improves.
+3. **Acquire**: score unlabelled pool backgrounds with the promoted bundle and
+   request the ones the gate rejects, most urgent first, up to
+   `max_open_requests`.
+
+Splits are per case (`run_*` directory), from a salted hash, so all repeats and
+calls of one run share a split, and a run keeps its split as data are added.
+Cases made only of acquired events never enter `val`/`test`.
+
+## Learner contract (`glue2.learner`)
+
+`fit(snapshot, out_root) -> bundle_dir`. A bundle's `predict(inputs)` returns
+`mean` (native units), `errbar`, `score` (errbar / held-out RMSE), `novelty`
+(>1 = outside training set) and `ok`. This is GLUE's `iserrok` for mesh fields.
+`pca_ridge` is the reference baseline. A SOLSTICE learner registers its own
+name with `glue2.learner.register`.
+
+## Use
+
+```bash
+pip install -e '.[dev]'
+glue2 status   --config configs/diiid_eirene_v2.example.yaml   # read-only, safe anytime
+glue2 ingest   --config ...
+glue2 snapshot --config ...
+glue2 cycle    --config ... --cycles 10
+pytest
+```
+
+`tests/test_loop.py::test_simulated_active_learning` runs the whole cycle. It
+holds back part of an archive as the unlabelled pool and uses
+`SimulatedTeacher` to answer requests from it. To run the same benchmark on
+real data, point `pool.root` at held-back campaign cases.
