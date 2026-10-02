@@ -5,7 +5,10 @@ workdir: /home/cloud/glue2/diiid_eirene_v2
 ingest_roots:
   - /home/cloud/solps-runs/diii-d/eirene_training_campaign_v2   # campaign output
   - /home/cloud/glue2/diiid_eirene_v2/inbox                     # teacher answers
-settle_seconds: 120          # the Fortran writer creates files in place
+settle_seconds: 120          # files without a campaign manifest; the Fortran writer creates them in place
+exclude: ["_*", ".*"]        # e.g. _quarantine_* re-runs are never ingested
+skip_dataless: true          # leave Dropbox online-only placeholders until they are downloaded
+max_new_cases: null          # set to bound one ingest scan
 
 spec:
   event_kinds: [single_call]       # average_used_by_b2 is a derived reduction

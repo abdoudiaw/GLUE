@@ -46,8 +46,11 @@ def main(argv=None) -> int:
     ap.add_argument("command", choices=["status", "ingest", "snapshot", "cycle"])
     ap.add_argument("--config", required=True)
     ap.add_argument("--cycles", type=int, default=1)
+    ap.add_argument("--max-new-cases", type=int, help="override max_new_cases for this run")
     args = ap.parse_args(argv)
     cfg, raw = load_config(args.config)
+    if args.max_new_cases is not None:
+        cfg.max_new_cases = args.max_new_cases
 
     if args.command == "status":
         with Catalog.reader(cfg.catalog_path) as cat:
@@ -61,7 +64,10 @@ def main(argv=None) -> int:
         return 2
     with cat:
         if args.command == "ingest":
-            print(json.dumps(ingest(cat, cfg.ingest_roots, settle_seconds=cfg.settle_seconds).as_dict()))
+            rep = ingest(cat, cfg.ingest_roots, settle_seconds=cfg.settle_seconds,
+                         exclude=cfg.exclude, max_new_cases=cfg.max_new_cases,
+                         skip_dataless=cfg.skip_dataless)
+            print(json.dumps(rep.as_dict()))
         elif args.command == "snapshot":
             snap = build_snapshot(cat, cfg.spec, Path(cfg.workdir) / "snapshots")
             print(json.dumps({"snapshot_id": snap.snapshot_id, "counts": snap.manifest["counts"]}))

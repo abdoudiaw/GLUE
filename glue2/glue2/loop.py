@@ -37,6 +37,9 @@ class LoopConfig:
     learner: str = "pca_ridge"
     learner_params: dict = field(default_factory=dict)
     settle_seconds: float = 60.0
+    exclude: tuple[str, ...] = ("_*", ".*")   # directory names never scanned
+    max_new_cases: int | None = None   # per ingest; bounds the work of one scan
+    skip_dataless: bool = True         # leave cloud placeholders until they are downloaded
     retrain_min_new: int = 1           # new eligible events that trigger retraining
     batch_size: int = 4                # requests per cycle
     max_open_requests: int = 16
@@ -52,6 +55,8 @@ class LoopConfig:
         d["workdir"] = Path(d["workdir"])
         d["spec"] = SnapshotSpec.from_dict(d["spec"])
         d["ingest_roots"] = [Path(p) for p in d["ingest_roots"]]
+        if "exclude" in d:
+            d["exclude"] = tuple(d["exclude"])
         return cls(**d)
 
 
@@ -167,7 +172,9 @@ class GlueLoop:
     # ------------------------------------------------------------------- cycle
 
     def cycle(self) -> dict:
-        rep = ingest(self.catalog, self.cfg.ingest_roots, settle_seconds=self.cfg.settle_seconds)
+        rep = ingest(self.catalog, self.cfg.ingest_roots, settle_seconds=self.cfg.settle_seconds,
+                     exclude=self.cfg.exclude, max_new_cases=self.cfg.max_new_cases,
+                     skip_dataless=self.cfg.skip_dataless)
         out = {"utc": utcnow(), "ingest": rep.as_dict()}
         new = self.new_eligible()
         if new and new >= self.cfg.retrain_min_new:

@@ -25,6 +25,11 @@ FILENAME_RE = re.compile(
 )
 CASE_DIR_RE = re.compile(r"^run_[^/]+$")
 
+# Per-case sidecar files written by the training campaign.
+CASE_MANIFEST = "eirene_training_v2.sha256"
+CASE_SUCCESS = "EIRENE_TRAINING_SUCCESS"
+CASE_PARAMS = "source_params.json"
+
 # Minimum content for a usable event; the full inventory is configuration-dependent.
 REQUIRED_INPUTS = ("braeir_dni", "braeir_te", "braeir_ti", "braeir_vol")
 REQUIRED_CONTROLS = ("b2_tflux", "b2_flux_scale")
@@ -33,6 +38,11 @@ REQUIRED_OUTPUTS = ("eirbra_sni", "eirbra_smo", "eirbra_see", "eirbra_sei")
 # Prefixes that define the plasma background seen by EIRENE. Repeated EIRENE
 # calls for one B2 call share these exactly, so they identify the background.
 BACKGROUND_PREFIXES = ("braeir_", "b2_")
+# EIRENE index-maps DELTA_SHEATH[XY]B in place (eirmod_infcop.F) and B2 does not
+# refresh them before a repeated call, so they differ between repeats of one
+# background. They are excluded from the identity (and should not be model inputs
+# until that is resolved).
+BACKGROUND_EXCLUDE = ("braeir_delta_sheathx", "braeir_delta_sheathy")
 PROVENANCE_ATTRS = ("solps_iter_git", "eirene_git", "b2_5_git")
 
 
@@ -89,7 +99,7 @@ def background_hash(ds: netCDF4.Dataset) -> str:
     """Hash of the BRAEIR fields and b2_* call controls, independent of file layout."""
     h = hashlib.sha256()
     for name in sorted(ds.variables):
-        if not name.startswith(BACKGROUND_PREFIXES):
+        if not name.startswith(BACKGROUND_PREFIXES) or name in BACKGROUND_EXCLUDE:
             continue
         var = ds.variables[name]
         var.set_auto_mask(False)

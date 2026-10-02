@@ -35,8 +35,12 @@ workdir/
 
 ## The cycle (`glue2.loop.GlueLoop.cycle`)
 
-1. **Ingest** new event files. Files younger than `settle_seconds` are skipped,
-   because the Fortran writer creates them in place. Invalid files go to
+1. **Ingest** new event files. A campaign case (with `eirene_training_v2.sha256`)
+   is taken only after `EIRENE_TRAINING_SUCCESS` exists, and each file must match
+   its manifest hash; the sampled controls in `source_params.json` go to the
+   `cases` table. Other files must be older than `settle_seconds`, because the
+   Fortran writer creates them in place. `_*` directories (quarantine) are never
+   scanned, and cloud placeholders are left until they are downloaded. Invalid files go to
    `rejected` and are retried only if they change. Byte-identical copies are
    recorded once. An event whose background hash matches a request fulfils it.
 2. **Retrain** once `retrain_min_new` new events exist. This freezes a snapshot,
@@ -58,6 +62,14 @@ Cases made only of acquired events never enter `val`/`test`.
 (>1 = outside training set) and `ok`. This is GLUE's `iserrok` for mesh fields.
 `pca_ridge` is the reference baseline. A SOLSTICE learner registers its own
 name with `glue2.learner.register`.
+
+## Known data caveat (schema v2)
+
+EIRENE index-maps `DELTA_SHEATH[XY]B` in place (`eirmod_infcop.F`) and B2 does not
+refresh them before a repeated EIRENE call, so `braeir_delta_sheath[xy]` differ
+between repeats of one background (the second has lost the ix=nx-1 target
+entries). They are excluded from the background hash and should not be model
+inputs until this is resolved in SOLPS.
 
 ## Use
 

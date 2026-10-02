@@ -112,3 +112,19 @@ def write_case(root: Path, index: int, *, repeats: int = 2, calls: int = 1, nois
 
 INPUTS = ("braeir_dni", "braeir_te", "braeir_ti", "braeir_uu", "b2_tflux", "b2_flux_scale")
 TARGETS = ("eirbra_sni", "eirbra_see", "eirbra_sei", "eirbra_smo", "wneutrals_dab2")
+
+
+def mark_campaign_case(case_dir: Path, index: int, success: bool = True) -> None:
+    """Add the sidecars the cloud campaign writes: sha256 manifest, controls, success marker."""
+    import hashlib
+    import json
+    case_dir = Path(case_dir)
+    lines = [f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}"
+             for p in sorted(case_dir.glob("eirene_training_v2_*.nc"))]
+    (case_dir / "eirene_training_v2.sha256").write_text("\n".join(lines) + "\n")
+    dens, temp, puff = case_controls(index)
+    (case_dir / "source_params.json").write_text(json.dumps({"inputs": {
+        "core": {"density_m-3": dens * 1e20}, "power": {"Pe_W": temp * 1e6},
+        "gas_puffing": {"targets": {"D2": {"value": puff * 1e21, "gpfc": [2, 0, 0]}}}}}))
+    if success:
+        (case_dir / "EIRENE_TRAINING_SUCCESS").touch()

@@ -43,6 +43,12 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS events_background ON events(background_hash);
 CREATE INDEX IF NOT EXISTS events_case ON events(case_id);
 
+CREATE TABLE IF NOT EXISTS cases (
+    case_id     TEXT PRIMARY KEY,
+    controls    TEXT NOT NULL,              -- JSON: sampled run controls (source_params.json)
+    source      TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS rejected (
     path        TEXT PRIMARY KEY,
     size        INTEGER NOT NULL,
@@ -206,6 +212,7 @@ class Catalog:
         return {
             "events": self.scalar("SELECT COUNT(*) FROM events"),
             "cases": self.scalar("SELECT COUNT(DISTINCT case_id) FROM events"),
+            "cases_with_controls": self.scalar("SELECT COUNT(*) FROM cases"),
             "backgrounds": self.scalar("SELECT COUNT(DISTINCT background_hash) FROM events"),
             "events_by_origin": counts("SELECT origin, COUNT(*) FROM events GROUP BY origin"),
             "events_by_kind": counts("SELECT event_kind, COUNT(*) FROM events GROUP BY event_kind"),
