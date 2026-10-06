@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS events (
     event_kind      TEXT NOT NULL,
     repeat_index    INTEGER NOT NULL,
     repeat_count    INTEGER NOT NULL,
+    used_by_b2      INTEGER,                            -- NULL when the event does not record it
     background_hash TEXT NOT NULL,
     schema_version  TEXT NOT NULL,
     created_local   TEXT,
@@ -131,6 +132,8 @@ class Catalog:
         conn.execute("PRAGMA synchronous=FULL")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.executescript(SCHEMA)
+        if "used_by_b2" not in {row[1] for row in conn.execute("PRAGMA table_info(events)")}:
+            conn.execute("ALTER TABLE events ADD COLUMN used_by_b2 INTEGER")
         return cls(path, conn, fd)
 
     @classmethod

@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from glue2.catalog import Catalog, utcnow
-from glue2.events import (CASE_MANIFEST, CASE_PARAMS, CASE_SUCCESS, FILENAME_RE, EventError,
+from glue2.events import (CASE_MANIFESTS, CASE_PARAMS, CASE_SUCCESS, FILENAME_RE, EventError,
                           case_id_for, read_event_info)
 
 DEFAULT_EXCLUDE = ("_*", ".*")
@@ -74,8 +74,8 @@ def scan(roots: list[str | Path], exclude: tuple[str, ...] = DEFAULT_EXCLUDE) ->
 
 
 def case_manifest(case_dir: Path) -> dict[str, str] | None:
-    path = case_dir / CASE_MANIFEST
-    if not path.exists():
+    path = next((case_dir / name for name in CASE_MANIFESTS if (case_dir / name).exists()), None)
+    if path is None:
         return None
     out = {}
     for line in path.read_text().splitlines():

@@ -1,4 +1,4 @@
-"""Read and validate SOLPS-ITER EIRENE training events (schema v2).
+"""Read and validate SOLPS-ITER EIRENE training events (schema v2 and v3).
 
 An event is one NetCDF file written by b2mod_eirene_training_dump at the
 eirene_eirsrt seam: BRAEIR inputs, b2_* call controls, and the EIRBRA,
@@ -17,7 +17,7 @@ import netCDF4
 import numpy as np
 
 SCHEMA_NAME = "solps_eirene_training_event"
-SUPPORTED_MAJOR = "2"
+SUPPORTED_MAJORS = ("2", "3")
 EVENT_GLOB = "eirene_training_v*_b2call_*.nc"
 FILENAME_RE = re.compile(
     r"eirene_training_v(?P<v>\d+)_b2call_(?P<call>\d{8})_"
@@ -26,7 +26,7 @@ FILENAME_RE = re.compile(
 CASE_DIR_RE = re.compile(r"^run_[^/]+$")
 
 # Per-case sidecar files written by the training campaign.
-CASE_MANIFEST = "eirene_training_v2.sha256"
+CASE_MANIFESTS = ("eirene_training_v3.sha256", "eirene_training_v2.sha256")
 CASE_SUCCESS = "EIRENE_TRAINING_SUCCESS"
 CASE_PARAMS = "source_params.json"
 
@@ -38,10 +38,11 @@ REQUIRED_OUTPUTS = ("eirbra_sni", "eirbra_smo", "eirbra_see", "eirbra_sei")
 # Prefixes that define the plasma background seen by EIRENE. Repeated EIRENE
 # calls for one B2 call share these exactly, so they identify the background.
 BACKGROUND_PREFIXES = ("braeir_", "b2_")
-# EIRENE index-maps DELTA_SHEATH[XY]B in place (eirmod_infcop.F) and B2 does not
-# refresh them before a repeated call, so they differ between repeats of one
-# background. They are excluded from the identity (and should not be model inputs
-# until that is resolved).
+# EIRENE index-maps DELTA_SHEATH[XY]B in place (eirmod_infcop.F). Schema-v2 events,
+# and any event from a build without the B2 sheath save/restore, carry different
+# values in repeats of one background, so they stay out of the identity. Events
+# from schema 3.0.1 with the restore compiled in repeat them exactly and they are
+# valid model inputs there.
 BACKGROUND_EXCLUDE = ("braeir_delta_sheathx", "braeir_delta_sheathy")
 PROVENANCE_ATTRS = ("solps_iter_git", "eirene_git", "b2_5_git")
 
@@ -60,6 +61,7 @@ class EventInfo:
     event_kind: str
     repeat_index: int
     repeat_count: int
+    used_by_b2: int | None
     background_hash: str
     schema_version: str
     created_local: str
@@ -115,7 +117,7 @@ def validate(ds: netCDF4.Dataset) -> None:
     if schema != SCHEMA_NAME:
         raise EventError(f"schema_name is {schema!r}, expected {SCHEMA_NAME!r}")
     version = str(getattr(ds, "schema_version", ""))
-    if version.split(".")[0] != SUPPORTED_MAJOR:
+    if version.split(".")[0] not in SUPPORTED_MAJORS:
         raise EventError(f"unsupported schema_version {version!r}")
     missing = [n for n in REQUIRED_INPUTS + REQUIRED_CONTROLS + REQUIRED_OUTPUTS
                if n not in ds.variables]
@@ -153,6 +155,7 @@ def read_event_info(path: str | Path, case_id: str | None = None) -> EventInfo:
         event_kind=kind,
         repeat_index=int(attrs.get("eirene_repeat_index", int(match["rep"]))),
         repeat_count=int(attrs.get("eirene_repeat_count", 1)),
+        used_by_b2=int(attrs["eirene_result_used_by_b2"]) if "eirene_result_used_by_b2" in attrs else None,
         background_hash=bg,
         schema_version=str(attrs["schema_version"]),
         created_local=str(attrs.get("created_local", "")),

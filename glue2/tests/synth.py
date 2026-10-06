@@ -69,7 +69,8 @@ SIZES = {"bra_fluid_species": 1, "bra_y": NY, "bra_x": NX, "active_stratum": NAC
          "wneutral_state_slot": 1, "wneutral_atom_species": 1, "wneutral_y": NY, "wneutral_x": NX}
 
 
-def write_event(path: Path, arrays: dict, *, call: int, kind: str, rep: int, reps: int) -> Path:
+def write_event(path: Path, arrays: dict, *, call: int, kind: str, rep: int, reps: int,
+                schema: str = "2.0.0", used: int | None = None) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     with netCDF4.Dataset(path, "w") as ds:
         for dim, size in SIZES.items():
@@ -80,17 +81,26 @@ def write_event(path: Path, arrays: dict, *, call: int, kind: str, rep: int, rep
         crc = ds.createVariable("b2_crcstra", "S1", ("active_stratum",))
         crc[:] = np.array([b"W", b"V"])
         ds.setncatts({
-            "schema_name": "solps_eirene_training_event", "schema_version": "2.0.0",
+            "schema_name": "solps_eirene_training_event", "schema_version": schema,
             "event_kind": kind, "created_local": "20261002T000000.000-0400",
             "b2_5_git": "f03d24a", "solps_iter_git": "d6de341", "eirene_git": "f8f63fa",
             "b2_call_index": call, "eirene_repeat_index": rep, "eirene_repeat_count": reps,
         })
+        if used is not None:
+            ds.setncattr("eirene_result_used_by_b2", used)
     return path
 
 
 def write_case(root: Path, index: int, *, repeats: int = 2, calls: int = 1, noise: float = 0.03,
-               average: bool = True, scale: float = 1.0) -> list[Path]:
-    """Write one run_<id>__D directory; returns the event paths."""
+               average: bool = True, scale: float = 1.0, schema: str = "2.0.0") -> list[Path]:
+    """Write one run_<id>__D directory; returns the event paths.
+
+    Schema-3 events also record which result B2 used: the average when one is
+    written, otherwise the last repeat.
+    """
+    major = schema.split(".")[0]
+    flagged = major != "2"
+    averaged = average and repeats > 1
     case_dir = Path(root) / f"run_{index:08x}__D"
     paths = []
     for call in range(calls):
@@ -99,14 +109,15 @@ def write_case(root: Path, index: int, *, repeats: int = 2, calls: int = 1, nois
         rng = np.random.default_rng(index * 100 + call)
         outs = [response(bg, rng, noise) for _ in range(repeats)]
         for rep, out in enumerate(outs, start=1):
-            name = f"eirene_training_v2_b2call_{call:08d}_single_call_{rep:04d}.nc"
+            name = f"eirene_training_v{major}_b2call_{call:08d}_single_call_{rep:04d}.nc"
+            used = int(rep == repeats and not averaged) if flagged else None
             paths.append(write_event(case_dir / name, bg | out, call=call, kind="single_call",
-                                     rep=rep, reps=repeats))
-        if average and repeats > 1:
+                                     rep=rep, reps=repeats, schema=schema, used=used))
+        if averaged:
             avg = {k: np.mean([o[k] for o in outs], axis=0) for k in outs[0]}
-            name = f"eirene_training_v2_b2call_{call:08d}_average_used_by_b2_0000.nc"
+            name = f"eirene_training_v{major}_b2call_{call:08d}_average_used_by_b2_0000.nc"
             paths.append(write_event(case_dir / name, bg | avg, call=call, kind="average_used_by_b2",
-                                     rep=0, reps=repeats))
+                                     rep=0, reps=repeats, schema=schema, used=1 if flagged else None))
     return paths
 
 

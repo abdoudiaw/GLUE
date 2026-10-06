@@ -3,7 +3,7 @@
 GLUE v2 keeps the GLUE active-learning cycle — predict, gate on uncertainty,
 request a fine-grain answer, accumulate ground truth, retrain, version — and
 replaces its plumbing for SOLPS-ITER. The fine-grain answer is the EIRENE
-return at `eirene_eirsrt` (schema-v2 training events); the model library is
+return at `eirene_eirsrt` (schema-v2 and v3 training events); the model library is
 SOLSTICE (through the `Learner` interface).
 
 ## What changed from GLUE v1, and why
@@ -69,7 +69,19 @@ EIRENE index-maps `DELTA_SHEATH[XY]B` in place (`eirmod_infcop.F`) and B2 does n
 refresh them before a repeated EIRENE call, so `braeir_delta_sheath[xy]` differ
 between repeats of one background (the second has lost the ix=nx-1 target
 entries). They are excluded from the background hash and should not be model
-inputs until this is resolved in SOLPS.
+inputs for schema-v2 events.
+
+Schema 3.0.1 events from a build with the B2 sheath save/restore compiled in
+repeat these fields exactly, so they are valid inputs there (see
+`configs/diiid_eirene_v3.example.yaml`). They remain outside the background hash
+so that event identity does not depend on the build.
+
+## Training on the result B2 used
+
+On the first B2 call of a run EIRENE is called twice with identical inputs; B2
+discards the first result. Schema-3 events record this in
+`eirene_result_used_by_b2`, stored in the catalog as `used_by_b2`. Set
+`used_only: true` in the snapshot spec to keep only the used result.
 
 ## Use
 

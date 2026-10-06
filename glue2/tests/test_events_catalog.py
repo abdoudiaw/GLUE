@@ -104,3 +104,12 @@ def test_request_fulfilment_links_late_repeats(catalog, tmp_path):
     rows = catalog.query("SELECT origin, request_id FROM events")
     assert [tuple(r) for r in rows] == [("al_request", "req-1")] * 2
     assert catalog.scalar("SELECT status FROM requests") == "fulfilled"
+
+
+def test_writer_adds_used_by_b2_to_an_older_catalog(tmp_path):
+    path = tmp_path / "catalog.sqlite"
+    Catalog.writer(path).close()
+    with sqlite3.connect(path) as conn:
+        conn.execute("ALTER TABLE events DROP COLUMN used_by_b2")
+    with Catalog.writer(path) as cat:
+        assert "used_by_b2" in {row[1] for row in cat.query("PRAGMA table_info(events)")}

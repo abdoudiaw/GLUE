@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from synth import background, case_controls, write_case
@@ -85,3 +87,42 @@ def test_bundle_reload_is_identical(trained):
     for k in a.mean:
         np.testing.assert_array_equal(a.mean[k], b.mean[k])
     np.testing.assert_array_equal(a.ok, b.ok)
+
+
+def test_schema3_events_and_used_only_snapshot(catalog, spec, tmp_path):
+    root = tmp_path / "v3"
+    for i in range(6):
+        write_case(root, i, schema="3.0.1", average=False)
+    report = ingest(catalog, [root], settle_seconds=0)
+    assert len(report.added) == 12 and not report.rejected
+    assert catalog.scalar("SELECT COUNT(*) FROM events WHERE used_by_b2 = 1") == 6
+
+    both = build_snapshot(catalog, spec, tmp_path / "snaps")
+    used = build_snapshot(catalog, replace(spec, used_only=True), tmp_path / "snaps")
+    assert sum(both.manifest["counts"].values()) == 12
+    assert sum(used.manifest["counts"].values()) == 6
+    assert {e["repeat_index"] for e in used.manifest["events"]} == {2}
+
+
+def test_training_arrays_trim_to_what_b2_uses(catalog, tmp_path):
+    from glue2.b2view import training_arrays
+    from glue2.snapshot import SnapshotSpec
+    from synth import NX, NY
+
+    root = tmp_path / "v3"
+    for i in range(4):
+        write_case(root, i, schema="3.0.1", average=False)
+    ingest(catalog, [root], settle_seconds=0)
+    spec = SnapshotSpec(inputs=("braeir_dni", "braeir_te", "b2_tflux", "b2_flux_scale"),
+                        targets=("eirbra_sni", "eirbra_smo", "eirbra_see", "eirbra_sei"), used_only=True)
+    snap = build_snapshot(catalog, spec, tmp_path / "snaps")
+    arrays = training_arrays(snap)
+    n_active = snap.shapes["b2_tflux"][0]
+    assert arrays.inputs.shape == (4, 2, NY - 2, NX - 2)
+    assert arrays.targets.shape == (4, 4 * n_active, NY - 2, NX - 2)
+    assert arrays.target_names[:2] == [f"sni:{arrays.strata[0]}", f"sni:{arrays.strata[1]}"]
+    raw = snap.load(["eirbra_smo", "braeir_dni"])
+    np.testing.assert_array_equal(arrays.targets[:, n_active], raw["eirbra_smo"][:, 0, 0, 1:-1, 1:NX - 1])
+    np.testing.assert_array_equal(arrays.inputs[:, 0], raw["braeir_dni"][:, 0, 1:-1, 1:NX - 1])
+    total = arrays.source_sum("sni")
+    assert total.shape == (4, NY - 2, NX - 2)

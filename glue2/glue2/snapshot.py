@@ -43,6 +43,7 @@ class SnapshotSpec:
     inputs: tuple[str, ...]
     targets: tuple[str, ...]
     event_kinds: tuple[str, ...] = ("single_call",)
+    used_only: bool = False          # keep only the EIRENE result B2 actually used
     val_fraction: float = 0.15
     test_fraction: float = 0.15
     split_salt: str = "glue2"
@@ -126,8 +127,9 @@ def build_snapshot(catalog: Catalog, spec: SnapshotSpec, root: str | Path,
     root = Path(root)
     high_water = catalog.high_water() if high_water is None else high_water
     marks = ",".join("?" for _ in spec.event_kinds)
+    used = " AND used_by_b2 = 1" if spec.used_only else ""
     rows = catalog.query(
-        f"SELECT * FROM events WHERE event_id <= ? AND event_kind IN ({marks}) ORDER BY event_id",
+        f"SELECT * FROM events WHERE event_id <= ? AND event_kind IN ({marks}){used} ORDER BY event_id",
         (high_water, *spec.event_kinds))
     if not rows:
         raise ValueError("no eligible events for snapshot")

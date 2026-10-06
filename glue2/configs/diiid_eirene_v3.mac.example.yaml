@@ -1,0 +1,65 @@
+# GLUE v2 loop for the DIII-D EIRENE training campaign (schema 3 events), read from the Dropbox archive on the Mac.
+# Keep `workdir` (catalog + snapshots + bundles) on a local disk, not NFS.
+
+workdir: /Users/42d/glue2_work/diiid_eirene_v3
+ingest_roots:
+  - "/Users/42d/Library/CloudStorage/Dropbox-ORNL/Abdou Diaw/SOLPS_DB/eirene_training_v3__ens__DIII-D__APP-FPP__D_C_Ne__ss__lhs__20250124_144649"
+  - /Users/42d/glue2_work/diiid_eirene_v3/inbox
+settle_seconds: 120
+exclude: ["_*", ".*"]
+skip_dataless: true
+max_new_cases: null
+
+spec:
+  event_kinds: [single_call]
+  used_only: true                  # train on the EIRENE result B2 used, not the warm-up call
+  val_fraction: 0.15
+  test_fraction: 0.15
+  dtype: float32
+  inputs:                          # BRAEIR fields that are non-zero in the pure-D case, plus call controls
+    - braeir_dni
+    - braeir_vv
+    - braeir_uu
+    - braeir_ww
+    - braeir_up
+    - braeir_fnix
+    - braeir_fniy
+    - braeir_zi
+    - braeir_te
+    - braeir_ti
+    - braeir_pr
+    - braeir_rr
+    - braeir_feix
+    - braeir_feiy
+    - braeir_feex
+    - braeir_feey
+    - braeir_vol
+    - braeir_bfield
+    - braeir_bpol
+    - braeir_btor
+    - braeir_delta_sheathx
+    - braeir_delta_sheathy
+    - braeir_aiso
+    - braeir_po
+    - b2_tflux
+    - b2_flux_scale
+  # All-zero in the pure-D, no-drift case and left out for now:
+  #   vparx, vpary, vradx, vrady, uudia, vvdia, brad, deltae_parx, deltae_pary, deltae_radx, deltae_rady, deltai_parx, deltai_pary, deltai_radx, deltai_rady
+  targets:                         # what B2.5 feeds back into the plasma solution
+    - eirbra_sni                   # per stratum; B2 scales by tflux * flux_scale
+    - eirbra_smo                   # only momentum slot 0 (parallel) reaches the equations
+    - eirbra_see
+    - eirbra_sei
+    - wneutrals_wldna              # wall tallies: B2 forms the net neutral flux into the core
+    - wneutrals_wldra
+    - wneutrals_wldpa
+    - wneutrals_wldnm
+    - wneutrals_wldrm
+    - wneutrals_wldpm
+
+learner: pca_ridge                 # baseline; SOLSTICE registers its own learner name
+learner_params: {members: 8, degree: 2}
+retrain_min_new: 50
+batch_size: 8
+max_open_requests: 32
+promote_tolerance: 0.05
