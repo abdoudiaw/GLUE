@@ -134,14 +134,10 @@ def training_arrays(snapshot: Snapshot, split: str | None = None,
 
 
 def _stratum_labels(snapshot: Snapshot, n_active: int) -> list[str]:
-    """``1W, 2E, ...`` from the first event's ``b2_crcstra``, else ``1, 2, ...``."""
-    try:
-        import netCDF4
-        with netCDF4.Dataset(snapshot.manifest["events"][0]["path"]) as ds:
-            codes = ds.variables["b2_crcstra"][...]
-        codes = [c.decode() if isinstance(c, bytes) else str(c) for c in np.asarray(codes).ravel()]
-        if len(codes) == n_active:
-            return [f"{i + 1}{c.strip()}" for i, c in enumerate(codes)]
-    except (OSError, KeyError):
-        pass
+    """``1W, 2E, ...`` from the manifest, else from the first event's ``b2_crcstra``,
+    else ``1, 2, ...``."""
+    from glue2.snapshot import stratum_codes
+    codes = snapshot.manifest.get("strata") or stratum_codes(snapshot.manifest["events"][0]["path"])
+    if codes and len(codes) == n_active:
+        return list(codes)
     return [str(i + 1) for i in range(n_active)]

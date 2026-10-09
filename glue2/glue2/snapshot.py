@@ -122,6 +122,20 @@ class Snapshot:
         return [self.manifest["events"][i] for i in self.samples(split)]
 
 
+def stratum_codes(event_path: str) -> list[str] | None:
+    """`['1W', '2E', ...]` from an event's ``b2_crcstra`` (active stratum type codes),
+    None when the event does not carry it. Stored in the manifest so a snapshot copied
+    to another machine keeps its stratum names without the event files."""
+    try:
+        import netCDF4
+        with netCDF4.Dataset(event_path) as ds:
+            codes = ds.variables["b2_crcstra"][...]
+    except (OSError, KeyError):
+        return None
+    codes = [c.decode() if isinstance(c, bytes) else str(c) for c in np.asarray(codes).ravel()]
+    return [f"{i + 1}{c.strip()}" for i, c in enumerate(codes)]
+
+
 def build_snapshot(catalog: Catalog, spec: SnapshotSpec, root: str | Path,
                    high_water: int | None = None) -> Snapshot:
     root = Path(root)
@@ -183,6 +197,7 @@ def build_snapshot(catalog: Catalog, spec: SnapshotSpec, root: str | Path,
         "cases": {s: sorted({e["case_id"] for e in events if e["split"] == s}) for s in SPLITS},
         "events": events,
         "excluded": excluded,
+        "strata": stratum_codes(events[0]["path"]),
     }
 
     tmp = root / f".{snapshot_id}.tmp-{os.getpid()}"
