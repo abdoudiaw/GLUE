@@ -23,7 +23,7 @@ set -euo pipefail
 cd ${GLUE_ROOT:-/pscratch/sd/d/diawa/GLUE}
 module load ${PYTORCH_MODULE:-pytorch/2.13.0}
 source "${SOLSTICE_VENV:-$SCRATCH/venvs/solstice}/bin/activate"
-export OMP_NUM_THREADS=8
+export PYTHONPATH=$PWD/glue2:${PYTHONPATH:-} OMP_NUM_THREADS=8    # the glue2 package is glue2/glue2
 mkdir -p logs/eirene
 
 CONFIG=${CONFIG:-glue2/configs/diiid_eirene_v3.nersc.example.yaml}
