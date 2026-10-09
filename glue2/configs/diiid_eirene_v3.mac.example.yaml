@@ -1,10 +1,10 @@
 # GLUE v2 loop for the DIII-D EIRENE training campaign (schema 3 events), read from the Dropbox archive on the Mac.
 # Keep `workdir` (catalog + snapshots + bundles) on a local disk, not NFS.
 
-workdir: /Users/42d/glue2_work/diiid_eirene_v3
+workdir: /Users/42d/data/eirene_nn/glue2_work/diiid_eirene_v3
 ingest_roots:
   - "/Users/42d/Library/CloudStorage/Dropbox-ORNL/Abdou Diaw/SOLPS_DB/eirene_training_v3__ens__DIII-D__APP-FPP__D_C_Ne__ss__lhs__20250124_144649"
-  - /Users/42d/glue2_work/diiid_eirene_v3/inbox
+  - /Users/42d/data/eirene_nn/glue2_work/diiid_eirene_v3/inbox
 settle_seconds: 120
 exclude: ["_*", ".*"]
 skip_dataless: true
