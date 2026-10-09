@@ -24,7 +24,23 @@ failures.
 | Learner swapped in during a run | Immutable bundles; promotion gated on held-out tests |
 | Scalar SQL columns | Arrays stay in NetCDF; the catalog has one row per event |
 
-## Layout
+## Repository layout
+
+```
+glue2/          the package: events, catalog, ingest, snapshot, b2view, learner, loop
+configs/        example loop configs (DIII-D EIRENE campaign: diiid_eirene_v3.*.yaml)
+tests/
+campaigns/      scripts that produce training events on the SOLPS side
+  diiid_eirene/   DIII-D campaign runner (Mac/Mora controllers, per-case runner,
+                  training-dump build, event validator)
+docs/           EIRENE training-dump contract, data-flow diagram of what B2.5
+                receives from EIRENE, coupling note, hand-off notes
+notebooks/      explorers for the event files (eirene_dump_explorer) and the
+                legacy fort.31 background record (fort31_explorer)
+legacy/         the SOLPEx 5-in/4-out socket prototype, kept for reference only
+```
+
+## Work-directory layout
 
 ```
 workdir/

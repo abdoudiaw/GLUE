@@ -1,0 +1,860 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=0.82in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{listings}
+
+\definecolor{linkblue}{HTML}{145DA0}
+\definecolor{lightblue}{HTML}{EAF3F8}
+\definecolor{lightyellow}{HTML}{FFF6D8}
+\definecolor{lightred}{HTML}{FBE9E7}
+\hypersetup{colorlinks=true,linkcolor=linkblue,urlcolor=linkblue,citecolor=linkblue}
+\setlist{nosep,leftmargin=1.5em}
+\setlength{\parskip}{0.45em}
+\setlength{\parindent}{0pt}
+\setlength{\headheight}{14pt}
+\setlength{\emergencystretch}{2em}
+\renewcommand{\arraystretch}{1.18}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{SOLPS--EIRENE--SOLSTICE coupling note}
+\rhead{1 October 2026}
+\cfoot{\thepage}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\decision}[1]{\begin{center}\fcolorbox{linkblue}{lightblue}{\parbox{0.94\linewidth}{#1}}\end{center}}
+\newcommand{\warningbox}[1]{\begin{center}\fcolorbox{orange!70!black}{lightyellow}{\parbox{0.94\linewidth}{#1}}\end{center}}
+\newcommand{\riskbox}[1]{\begin{center}\fcolorbox{red!70!black}{lightred}{\parbox{0.94\linewidth}{#1}}\end{center}}
+
+\title{SOLPS--ITER / EIRENE / SOLSTICE Hybrid Coupling\\
+\large Code trace, interface contract, risk audit, and implementation plan}
+\author{Working technical note for Abdourahmane Diaw}
+\date{Evidence checked 1 October 2026}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Executive conclusions}
+
+\decision{\textbf{Repository lineage.} GitHub records \href{https://github.com/abdoudiaw/SOLPS-ITER}{abdoudiaw/SOLPS-ITER} and \href{https://github.com/jlore/SOLPS-ITER}{jlore/SOLPS-ITER} as \emph{sibling forks} whose parent and source are both \href{https://github.com/iterorganization/SOLPS-ITER}{iterorganization/SOLPS-ITER}. Abdou's \texttt{master} contains Jeremy's current \texttt{master} commit as an ancestor, followed by four commits from the official repository. It contains no Jeremy-specific branch work. Therefore ``my fork is directly based on Jeremy's fork'' is not established by GitHub metadata or current \texttt{master} history.}
+
+\decision{\textbf{How data move.} In the integrated build, B2.5 and EIRENE exchange Fortran module arrays in memory. EIRENE does \emph{not} normally write \texttt{balance.nc} as the handoff to B2.5. B2.5 later reconstructs diagnostic source values from its semi-implicit coefficients and writes them to \texttt{balance.nc}. Files such as \texttt{fort.13}, \texttt{fort.15}, \texttt{fort.31}, and \texttt{fort.44} have restart, census, background, or diagnostic roles; they are not the main source-array interface.}
+
+\decision{\textbf{Recommended coupling seam.} Put the NN/EIRENE routing decision around \texttt{eirene\_eirsrt}. Give either backend the same \texttt{BRAEIR} state and call controls, and require it to populate the complete call-dependent EIRENE return state consumed by B2: \texttt{EIRBRA}, \texttt{WNEUTRALS}, and the applicable \texttt{CESTIM} estimators. B2 must then execute its existing post-return mapping, scaling, corrections, accumulation, averaging, and semi-implicit regularisation unchanged. A four-total model at \texttt{b2stbr} is only a reduced comparison experiment, not the production contract.}
+
+\decision{\textbf{Training-target rule.} Archive the complete seam first. Train on quantities computed or changed by EIRENE and required by B2. Do not train B2's downstream transformed sources. Exact input pass-throughs and fixed configuration arrays need not be learned: the adapter can copy or restore them deterministically. The first raw-contract model should otherwise retain all dynamic EIRENE-return fields; reductions must be justified later by read-set analysis and ablation.}
+
+\decision{\textbf{Training-data strategy.} Treat the existing coupled B2--EIRENE runs as the seed corpus: they contain physically consistent plasma backgrounds drawn from the actual closed-loop distribution. Inventory their saved \texttt{fort.31}, \texttt{balance.nc}, \texttt{fort.44/46}, inputs, and provenance first. Then use standalone EIRENE as a teacher farm to replay archived backgrounds, estimate Monte Carlo noise with repeated seeds, and add targeted coverage. Standalone random backgrounds alone should not replace coupled trajectory data.}
+
+\decision{\textbf{How the current archive can be used.} The existing \texttt{balance.nc} source channels are valid targets for a surrogate inserted at the same \emph{postprocessed physical-source} seam. They are not raw \texttt{EIRMOD\_EIRBRA} labels and must not be inserted into \texttt{SNI/SMO/SEE/SEI}. No ``unlinearisation'' is required for the late-seam experiment because the balance writer has already reconstructed the physical source at the current state; however, the raw scaling information and B2 source Jacobian cannot in general be recovered from those values.}
+
+\decision{\textbf{GLUE assessment.} Reuse GLUE's ideas---provenance, cache, uncertainty gate, fallback to a fine model, accumulation of ground truth, and versioned retraining. Do not transplant its current BGK/LAMMPS schemas, SQLite polling hot path, or batch-job fine-solver assumptions. EIRENE is already linked in-process and the exchanged object is a set of mesh fields, so a small SOLPS-specific router is the cleaner implementation.}
+
+\riskbox{\textbf{Current readiness.} The present socket prototype and trained labels are not ready for closed-loop replacement. There are array-order, temperature-unit, feature-schema, target-inverse-transform, ABI, fallback, MPI, and source-contract problems. The available evaluation also volume-weights already cell-integrated source targets, so its reported ``conservation'' metric is not the right acceptance metric. The official SOLSTICE v0.1.0 source bundle is a useful reproducible baseline, but its model card identifies it as a research preview; \texttt{Qi} is weak and \texttt{Sm} did not learn and must not be used.}
+
+\section{Repository and version audit}
+
+\subsection{Fork relationship}
+
+The GitHub API returned the following state on 25 September 2026:
+
+\small
+\begin{tabularx}{\linewidth}{@{}p{0.18\linewidth}p{0.20\linewidth}p{0.23\linewidth}Y@{}}
+\toprule
+Repository & GitHub parent/source & Current default-branch head & Interpretation \\
+\midrule
+\href{https://github.com/abdoudiaw/SOLPS-ITER}{Abdou fork} & Official repository (parent and source) & \href{https://github.com/abdoudiaw/SOLPS-ITER/commit/703210201feed52981aa26251a3d9562c7a014dd}{\texttt{703210201fee}}, 12 May 2026 & Direct metadata parent is the official repository. Only \texttt{master} exists. \\
+\href{https://github.com/jlore/SOLPS-ITER}{Jeremy fork} & Official repository (parent and source) & \href{https://github.com/jlore/SOLPS-ITER/commit/1bbabffac844f8a25c0749eb2526759e5418bace}{\texttt{1bbabffac844}}, 16 April 2026 & Sibling fork. It also has Jeremy-specific branches, none present in Abdou's fork. \\
+\href{https://github.com/iterorganization/SOLPS-ITER}{Official repository} & Root repository & \href{https://github.com/iterorganization/SOLPS-ITER/commit/ca0d04d9b0b2d4887bd3262e4e867d471ba86d62}{\texttt{ca0d04d9b0b2}}, 24 August 2026 & Official head at audit time. \\
+\bottomrule
+\end{tabularx}
+\normalsize
+
+The merge base between Jeremy's and Abdou's \texttt{master} branches is exactly Jeremy's head, \texttt{1bbabffa}. Abdou's branch is four commits ahead and zero behind Jeremy's branch; all four are official-project commits authored by Xavier Bonnin concerning account/document migration. Abdou's branch is 132 commits behind the current official \texttt{master}; Jeremy's is 136 behind. This means:
+
+\begin{itemize}
+\item Abdou's history is compatible with Jeremy's current \texttt{master} history.
+\item It does not contain evidence of Jeremy-only modifications.
+\item If a Jeremy feature is needed, identify its branch explicitly and compare or merge it deliberately.
+\end{itemize}
+
+A useful local remote layout is:
+
+\begin{lstlisting}[basicstyle=\ttfamily\small,frame=single]
+origin    https://github.com/abdoudiaw/SOLPS-ITER.git
+upstream  https://github.com/iterorganization/SOLPS-ITER.git
+jeremy    https://github.com/jlore/SOLPS-ITER.git
+\end{lstlisting}
+
+Do not merge the current official head merely to ``catch up'' before establishing a working reference build. First reproduce at the pinned revision, then update in a separate branch and rerun the reference tests.
+
+\subsection{Active SOLSTICE repository}
+
+The active model repository for this project is
+\href{https://github.com/abdoudiaw/solstice}{\texttt{abdoudiaw/solstice}}.
+The current development line is represented by
+\href{https://github.com/abdoudiaw/solstice/pull/1}{pull request 1}; at the
+1 October 2026 audit, its head is \texttt{main} at \texttt{677cfc4a8d} and
+its base is \texttt{exp/te-gap}. New model and training work belongs in this
+repository. \href{https://github.com/ORNL-Fusion/solstice}{\texttt{ORNL-Fusion/solstice}}
+is reference-only for this effort: do not commit or push project work there.
+
+\subsection{Pinned component revisions}
+
+Abdou's top-level \texttt{SOLPS-ITER} commit pins independent Git submodules:
+
+\begin{itemize}
+\item B2.5: \href{https://github.com/iterorganization/B2.5/tree/cb7d15b2878074bb450666bebee4b1df02ef79e6}{\texttt{cb7d15b28780}} (full SHA in link)
+\item EIRENE: \href{https://github.com/iterorganization/EIRENE/tree/f8f63fa0f69d7fb64a7d19f2ec372fd58eb5efc5}{\texttt{f8f63fa0f69d}} (full SHA in link)
+\end{itemize}
+
+The coupling changes belong mainly in the B2.5 submodule, not only in the top-level SOLPS-ITER repository. The implementation now uses \href{https://github.com/abdoudiaw/B2.5}{\texttt{abdoudiaw/B2.5}} on \texttt{feature/eirene-training-dump}, with the top-level \href{https://github.com/abdoudiaw/SOLPS-ITER}{\texttt{abdoudiaw/SOLPS-ITER}} branch pinning the tested B2.5 revision. The EIRENE submodule remains at the pinned unmodified revision.
+
+\subsection{SOLSTICE and GLUE provenance}
+
+\begin{itemize}
+\item The authoritative public repository supplied for this audit is \href{https://github.com/ORNL-Fusion/solstice}{ORNL-Fusion/solstice}, a non-fork repository. Audited \texttt{main}: \href{https://github.com/ORNL-Fusion/solstice/commit/65a9602c2f40bfbec50e594d58b2e659614c51d5}{\texttt{65a9602c2f40}}, dated 15 September 2026.
+\item \href{https://github.com/ORNL-Fusion/solstice/releases/tag/v0.1.0}{SOLSTICE v0.1.0} publishes the self-describing \texttt{pepc-diiid-sources-v1} source-model bundle: weights, manifest, fixed mesh, normalization, and model card. Audited SHA-256 values are recorded for reproducibility:\\
+archive: \texttt{e47d3123af09d23351e5d2a00c9d3f7}\\
+\phantom{archive: }\texttt{9f0369ee11a37c35aea39c483d3bcdd51}\\
+weights: \texttt{3f63b047112610ea554974483203fd0da}\\
+\phantom{weights: }\texttt{de07917f5c16883230d383f889fbd24}.
+\item \href{https://github.com/abdoudiaw/GLUE}{abdoudiaw/GLUE} is a fork of \href{https://github.com/lanl/GLUE}{lanl/GLUE}. Audited head: \href{https://github.com/abdoudiaw/GLUE/commit/41dca7f8e802d5adc1103aaf6e39eaf08c172dce}{\texttt{41dca7f8e802}} (full SHA in link).
+\end{itemize}
+
+\section{The actual B2.5--EIRENE data path}
+
+\subsection{High-level call sequence}
+
+At the pinned B2.5 revision, the relevant path is:
+
+\begin{lstlisting}[basicstyle=\ttfamily\small,frame=single]
+b2stbr
+  -> eirene_mc(..., sna0_eir, smo0_eir, ..., she0_eir, shi0_eir)
+       -> copy_background(...)       ! B2 plasma/geometry -> EIRENE modules
+       -> eirene_eirsrt(...)         ! Monte Carlo call, in-process
+       -> strata scaling, corrections, mapping, semi-implicit linearisation
+  -> optional source averaging
+  -> form physical totals from coefficient arrays
+  -> sna0 += sna0_eir; smo0 += smo0_eir
+     she0 += she0_eir; shi0 += shi0_eir
+  -> balance module later reconstructs diagnostics and writes balance.nc
+\end{lstlisting}
+
+The primary evidence is in B2.5
+\href{https://github.com/iterorganization/B2.5/blob/cb7d15b2878074bb450666bebee4b1df02ef79e6/src/sources/b2stbr.F}{\texttt{src/sources/b2stbr.F}},
+\href{https://github.com/iterorganization/B2.5/blob/cb7d15b2878074bb450666bebee4b1df02ef79e6/src/sources/b2mod_eirene.F}{\texttt{src/sources/b2mod\_eirene.F}}, and
+\href{https://github.com/iterorganization/B2.5/blob/cb7d15b2878074bb450666bebee4b1df02ef79e6/src/sources/eirene_f30f31.F}{\texttt{src/sources/eirene\_f30f31.F}}.
+
+\subsection{B2.5 to EIRENE: plasma background and geometry}
+
+\texttt{copy\_background} copies B2 state into EIRENE's \texttt{EIRMOD\_BRAEIR} module. The module contract is visible in
+\href{https://github.com/iterorganization/EIRENE/blob/f8f63fa0f69d7fb64a7d19f2ec372fd58eb5efc5/src/interfaces/couple_SOLPS-ITER/eirmod_braeir.f}{\texttt{eirmod\_braeir.f}}.
+
+\begin{longtable}{@{}p{0.23\linewidth}p{0.31\linewidth}p{0.39\linewidth}@{}}
+\toprule
+Group & EIRENE arrays & Meaning / important detail \\
+\midrule
+\endhead
+Thermodynamic state & \texttt{TEB}, \texttt{TIB}, \texttt{DNIB}, \texttt{PRB}, \texttt{POB} & Electron/ion temperature, charged-fluid density, total pressure, and potential-related state. B2 temperatures are internally in joules; the copy routine stores them in joules. \\
+Charged-fluid velocity & \texttt{UPB}, \texttt{UUB}, \texttt{VVB}, \texttt{WWB}, \texttt{UUDIAB}, \texttt{VVDIAB} & Parallel velocity plus mapped vector and diamagnetic components. A five-field surrogate input does not reproduce this full state. \\
+Face fluxes & \texttt{FNIXB}, \texttt{FNIYB}, \texttt{FEIXB}, \texttt{FEIYB}, \texttt{FEEXB}, \texttt{FEEYB} & Particle and ion/electron energy fluxes on B2 faces. These are part of the EIRENE background contract, not present in the current SOLSTICE source feature list. \\
+Geometry and magnetic field & \texttt{VOLB}, \texttt{RRB}, \texttt{BPOLB}, \texttt{BRADB}, \texttt{BTORB}, \texttt{BFELDB}, \texttt{ZIB} & Cell volume, major radius, magnetic-field components/magnitude, and charged-fluid charge. \\
+Optional corrections & \texttt{VPAR*}, \texttt{VRAD*}, \texttt{DELTA*}, \texttt{DELTA\_SHEATH*}, \texttt{AISOB} & Drift, energy, sheath, and anisotropy-related interface data. Their use depends on run options. \\
+\bottomrule
+\end{longtable}
+
+B2 indices \texttt{(-1:nx,-1:ny)} are shifted into EIRENE indices \texttt{(0:nx+1,0:ny+1)}, including guard cells and boundary extrapolation. Any surrogate protocol must define this mapping explicitly rather than infer it from array shape.
+
+The actual EIRENE answer also depends on configuration not represented by five plasma fields: geometry, species mapping, strata/source settings, recycling and wall parameters, atomic/molecular data, Monte Carlo settings, and restart/census state. A model conditioned only on \texttt{te, ti, ne, na\_D1, ua\_D1} can be valid for a controlled fixed configuration, but should not be presented as a general replacement contract.
+
+\subsection{EIRENE to B2.5: raw source tallies}
+
+EIRENE exposes the main raw return arrays in
+\href{https://github.com/iterorganization/EIRENE/blob/f8f63fa0f69d7fb64a7d19f2ec372fd58eb5efc5/src/interfaces/couple_SOLPS-ITER/eirmod_eirbra.F}{\texttt{eirmod\_eirbra.F}}:
+
+\begin{tabularx}{\linewidth}{@{}lYY@{}}
+\toprule
+Array & Shape concept & Quantity \\
+\midrule
+\texttt{SNI} & cell $\times$ charged fluid $\times$ stratum & Particle source \\
+\texttt{SMO} & cell $\times$ three momentum components per fluid $\times$ stratum & Vector momentum source \\
+\texttt{SEE} & cell $\times$ stratum & Electron energy source \\
+\texttt{SEI} & cell $\times$ stratum & Ion energy source \\
+\bottomrule
+\end{tabularx}
+
+The same module also exposes reaction-channel decompositions, including \texttt{SNI\_PAPL/PMPL/PIPL/PPPL}, \texttt{SMO\_MAPL/MMPL/MIPL/MPPL}, \texttt{SEE\_EAEL/EMEL/EIEL/EPEL}, \texttt{SEI\_EAPL/EMPL/EIPL/EPPL}, and electron-particle diagnostics \texttt{SNE\_PAEL/PMEL/PIEL}. Neutral densities, temperatures, fluxes, wall loads, and other diagnostics are filled elsewhere; they are not all direct source terms in the B2 fluid equations. Therefore ``four source families'' means four governing-equation categories, \emph{not} four scalar 2-D arrays. At the raw seam, their species, vector-component, stratum, and channel structure must be retained. The definitive middleware schema must be generated from the full post-\texttt{eirsrt} read-set in the pinned B2/EIRENE source, not inferred from four plots or from \texttt{balance.nc}.
+
+The return contract is wider than \texttt{EIRBRA}. During
+\texttt{eirene\_eirsrt}, the SOLPS interface fills \texttt{WNEUTRALS} and
+selected triangular-grid \texttt{CESTIM} estimators that B2 reads after the
+call. Schema v2 therefore groups the coupling state as follows.
+
+\begin{longtable}{@{}p{0.18\linewidth}p{0.34\linewidth}p{0.40\linewidth}@{}}
+\toprule
+Contract group & Recorded content & Role in training and replay \\
+\midrule
+\endhead
+\texttt{BRAEIR} input & Plasma densities, temperatures, velocities, face particle/energy fluxes, pressure/potential, volume, magnetic field, charge, and drift/sheath correction fields; plus direct call controls and stratum controls. & Model input. Geometry and fixed fields may later be represented by a configuration identifier, but the complete values remain in the archive. \\
+\texttt{EIRBRA} return & \texttt{SNI}, \texttt{SMO}, \texttt{SEE}, \texttt{SEI}; reaction-channel decompositions; stratum source strengths, correction factors, fluxes, and volume sums. & Dynamic learned target unless a field is proven to be an exact deterministic copy or reduction. B2 applies its normal source processing after replay. \\
+\texttt{WNEUTRALS} return & B2-grid atom/molecule/test-ion state and fluxes; emission, radiation, dissociation, wall, pumping, sputtering, inventories, and resolved-surface tallies and mapping metadata. & Preserve the complete state B2 can consume. Learn dynamic tallies; copy fixed surface/configuration metadata rather than fitting it. These values have already undergone the mapping/unit conversion performed inside EIRENE's SOLPS interface. \\
+\texttt{CESTIM} return & Triangular-grid atom, molecule, and test-ion particle/energy estimators and three velocity moments. & Required for exact behavior of the repeated-EIRENE-call averaging path. Treat dynamic estimators as targets whenever that mode is supported. \\
+Static/persistent context & Mesh topology, species/reaction/wall configuration, atomic data, and \texttt{fort.13}/\texttt{fort.15} restart or census state. & Conditions the EIRENE answer but is not a call-return tensor. Version/hash and preserve it with the dataset; do not ask the network to predict it. \\
+\bottomrule
+\end{longtable}
+
+Thus ``all EIRENE outputs'' means all mutable call-dependent values that the
+pinned B2 path reads after return, not every internal EIRENE work array. The
+v2 logger is designed to capture this boundary; the first runtime file must
+still be checked against the source read-set before the contract is declared
+validated.
+
+EIRENE's interface explicitly describes the returned tallies as rescaled to per-cell, per-stratum contributions. B2 then scales by stratum strength/recycling, performs coordinate mapping and corrections, and accumulates cell values directly. Consequently, the balance source labels discussed below are cell-integrated equation contributions, not source densities to be multiplied by cell volume again.
+
+\subsection{B2.5's semi-implicit source contract}
+
+The values finally added to B2 are coefficient arrays, not just four two-dimensional fields. For each cell and species, B2 reconstructs physical contributions as
+
+\begin{align}
+S_n &= a_0 + a_1 n_a,\\
+S_m &= b_0 + b_1 u_a + b_2(m_a n_a) + b_3(m_a n_a u_a),\\
+S_e &= c_0 + c_1 T_e + c_2 n_e + c_3 n_eT_e,\\
+S_i &= d_0 + d_1 T_i + d_2 n_i + d_3 n_iT_i.
+\end{align}
+
+These correspond to \texttt{sna0\_eir(:,:,0:1,:)}, \texttt{smo0\_eir(:,:,0:3,:)}, \texttt{she0\_eir(:,:,0:3)}, and \texttt{shi0\_eir(:,:,0:3)}. B2 creates these coefficients using source signs and \texttt{RF\_NEUT} stabilization/linearisation. A four-field surrogate that writes only the zero component can reproduce a physical value at the current state, but it does not reproduce the same Jacobian/stabilization behavior.
+
+There is an important precedent: when source averaging is enabled, B2 itself zeroes the coefficient arrays and writes the averaged physical totals into component zero. This makes a constant-component pilot technically plausible, but it still requires convergence and stability tests.
+
+\section{What \texttt{balance.nc} contains}
+
+\subsection{It is output, not the live handoff}
+
+The B2.5 balance module reconstructs diagnostic arrays from the coefficient arrays and the current plasma state, then writes them to NetCDF. For example, particle, momentum, electron-energy, and ion-energy channel values are built with the same formulas shown above. See
+\href{https://github.com/iterorganization/B2.5/blob/cb7d15b2878074bb450666bebee4b1df02ef79e6/src/modules/b2mod_balance.F}{\texttt{src/modules/b2mod\_balance.F}}.
+
+Therefore a model trained from \texttt{balance.nc} learns a postprocessed B2 diagnostic mapping. It does not directly learn the raw EIRENE module-array contract, and it does not automatically learn B2's semi-implicit coefficients.
+
+\subsection{Why these processed labels are still useful}
+
+The words ``scaled'' and ``linearised'' can suggest that the balance values are unusable as physical source targets. That is not the case if training and deployment use the same seam. The balance writer evaluates the coefficient representation at the current plasma state. For example, for a positive particle source \(t_0\), B2's \texttt{RF\_NEUT} construction has the schematic form
+
+\begin{align}
+a_0 &= (1+r_f)t_0, & a_1 &= -\frac{r_f t_0}{n},\\
+a_0+a_1n &= t_0.
+\end{align}
+
+For a negative source the coefficients are arranged differently, but the same cancellation gives \(a_0+a_1n=t_0\). Momentum and energy use analogous reconstructions at the current \(u_a,T_e,T_i,n_e,n_i\). Thus the \texttt{*\_bal} field retains the current, B2-scaled physical source contribution; it is not an arbitrary machine-learning normalisation. What it does \emph{not} retain is the original raw EIRENE tally or the separate coefficient/Jacobian behavior away from the current state.
+
+This yields two internally consistent experiments:
+
+\begin{longtable}{@{}p{0.23\linewidth}p{0.32\linewidth}p{0.37\linewidth}@{}}
+\toprule
+Target and insertion seam & What the model learns & Consequence \\
+\midrule
+\endhead
+Raw post-\texttt{eirsrt} seam & \texttt{SNI/SMO/SEE/SEI} plus required normalization, wall, channel, and statistical data & Existing B2 scaling, mapping, and semi-implicit construction remain unchanged. \texttt{balance.nc} alone is not a valid target and generally cannot be inverted to recover this contract. \\
+Postprocessed physical-source seam & Per-stratum \texttt{Sp/Sm/Qe/Qi} reconstructed in \texttt{balance.nc} & No unscaling is needed. Insert the prediction as a physical source, for example in coefficient zero, and explicitly accept that the native source Jacobian is no longer reproduced. This is a reduced B2-facing surrogate, not raw EIRENE equivalence. \\
+Semi-implicit coefficient seam & Full particle, three-component momentum, electron-energy, and ion-energy B2 coefficient arrays & Preserves B2-facing linearisation, but these coefficient arrays are not fully recoverable from the standard archived balance fields and require new logging. \\
+\bottomrule
+\end{longtable}
+
+Attempting to ``unscale'' the balance fields into raw EIRENE values is not a reliable general solution. The forward path can include dynamic \texttt{tflux}, recycling, \texttt{flux\_scale}, \texttt{sclstra}, geometry/component mapping, sign-dependent stabilization, averaging, and sums over channels. Some of those operations lose information and some required factors are not saved in the final archive. Therefore the existing data should be used honestly at the postprocessed seam; a raw-seam model requires instrumented output or a controlled one-call replay.
+
+\subsection{Current SOLSTICE label definitions}
+
+At audited SOLSTICE commit \texttt{65a9602c}, \texttt{from\_solps.py} constructs these labels by summing strata:
+
+\begin{longtable}{@{}p{0.11\linewidth}p{0.59\linewidth}p{0.23\linewidth}@{}}
+\toprule
+Label & Balance variables summed & Contract caveat \\
+\midrule
+\endhead
+\texttt{sp} & \texttt{papl + pmpl + pipl + pppl} particle channels, charged species index 1 & D$^+$-specific; omits the available core-particle source term and other charged species. \\
+\texttt{sne} & \texttt{pael + pmel} electron-particle channels & Omits the available \texttt{piel} channel. Also, \texttt{Sne} is diagnostic and is not an independent output argument of \texttt{eirene\_mc} into B2's main source arrays. \\
+\texttt{qe} & \texttt{eael + emel + eiel + epel} electron-energy channels & Postprocessed physical contribution, not four implicit coefficients. \\
+\texttt{qi} & \texttt{eapl + empl + eipl + eppl} ion-energy channels & Postprocessed physical contribution, not four implicit coefficients. \\
+\texttt{sm} & \texttt{mapl + mmpl + mipl + mppl} momentum channels, charged species index 1 & Parallel contribution for D$^+$; not EIRENE's full three-component momentum return. \\
+\bottomrule
+\end{longtable}
+
+The mapping may be an intentional D$_2$-only reduced target, but it must be named as such. It is not automatically equal to ``everything EIRENE passes to B2.'' The \texttt{piel} and core-particle omissions should be quantified over the training ensemble before choosing the final contract.
+
+\subsection{Audit of the 761-case archive}
+
+A read-only header and configuration audit of the supplied DIII-D ensemble found:
+
+\begin{itemize}
+\item 761 readable \texttt{balance.nc} files;
+\item 728 saved \texttt{fort.31} files, of which 726 are colocated with a \texttt{balance.nc} and therefore form direct archived input/target pairs;
+\item 546 balance files whose \texttt{nstra} dimension is 7 and 215 whose dimension is 8;
+\item all 763 available \texttt{b2.neutrals.parameters} files declare the same seven physical strata, \texttt{nstrai=7} and \texttt{crcstra=W,E,S,S,N,C,V};
+\item in every one of the 215 eight-slot balance files, the eighth slot is identically zero across the sixteen particle, momentum, electron-energy, and ion-energy channel arrays inspected.
+\end{itemize}
+
+The apparent seven-versus-eight split therefore does not describe two different physical stratum configurations. It is consistent with the EIRENE interface allocation \texttt{NSTRAD=NSTRA+1}, which reserves an additional time-stratum slot; some output versions expose that allocated slot and others write only the seven configured strata. Canonical training data should keep the first seven physical slots and assert that any exposed eighth slot is zero rather than silently accepting arbitrary dimensions.
+
+There is a separate schema issue: the seven-slot cohort contains \texttt{eirene\_mc\_mppl\_smo\_bal}, whereas the eight-slot cohort contains \texttt{eirene\_mc\_cppv\_smo\_bal}. Their numerical ranges are similar, but similarity is not proof of identical semantics. Trace the producing source revision or establish a controlled numerical identity before aliasing them. Until then, record the schema cohort and either keep the momentum targets separate or exclude that unresolved component from a common model.
+
+\subsection{Unit and metric correction}
+
+The legacy dataset and training code call \texttt{Sp/Sne/Qe/Qi/Sm} ``volumetric.'' The traced interface instead returns and accumulates per-cell contributions. B2's integrated diagnostic sums use direct sums of the source arrays. The current training/evaluation code computes global and flux-tube ``conservation'' with \texttt{sum(source * vol)}, which weights the source by volume a second time.
+
+\warningbox{Recompute all integrated metrics as direct sums over cells before making a go/no-go decision. Keep volume as an input feature if useful, but do not use it to integrate a target that is already cell-integrated. Add an empirical oracle test: compare direct sums and volume-weighted sums against B2's own printed integrated source/power totals for one controlled EIRENE call.}
+
+\section{What the relevant \texttt{fort.*} files contain}
+
+The file intuition is partly correct: several \texttt{fort.*} files contain the ingredients needed to replay EIRENE, but the standard writers do not preserve the complete input/output pair for one coupled call.
+
+\begin{longtable}{@{}p{0.13\linewidth}p{0.35\linewidth}p{0.44\linewidth}@{}}
+\toprule
+File & Role & Suitability for training \\
+\midrule
+\endhead
+\texttt{fort.30} & Structured-grid geometry and mapping used by the B2--EIRENE interface. & Reuse as immutable geometry for cases with the same mesh; it is not the varying plasma state or the source target. \\
+\texttt{fort.31} & B2-to-EIRENE plasma background: charged-fluid densities and velocities, temperatures, pressures/potential, face particle and energy fluxes, cell volumes, magnetic fields, charge data, and selected drift/sheath fields. & Best standard file for standalone replay of an archived B2 background. In the integrated path, however, B2 normally copies equivalent arrays directly into \texttt{EIRMOD\_BRAEIR}; the file is not the live handoff. Some optional fields are dummy or format-limited, so archive the run configuration too. \\
+\texttt{fort.13} & EIRENE plasma/reaction dump or restart data. & Important for reproducibility when enabled, but not the returned per-cell B2 source contract. \\
+\texttt{fort.15} & EIRENE census particle distribution/restart. & Can make the mapping history-dependent. Preserve it, or deliberately reset to a canonical state; it is not the source target. \\
+\texttt{fort.44} & B2-oriented formatted diagnostics, including neutral densities/temperatures/fluxes, emissivity, selected molecule-related sources, wall loading, and pumping, generally summed over strata. & Useful auxiliary labels and state diagnostics, including \texttt{dab2}; it does not contain the complete raw \texttt{SNI/SMO/SEE/SEI} return. \\
+\texttt{fort.46} & Raw-EIRENE-style neutral particle/energy/velocity densities on the triangle mesh with volume/direction information. & Useful neutral diagnostics, but not the structured B2 source arrays. \\
+\texttt{fort.11} & Packed coupling balance/control records such as \texttt{RCCPL/ICCPL/LCCPL}. & Useful bookkeeping; not the cellwise source fields. \\
+\bottomrule
+\end{longtable}
+
+The implemented schema-v2 event records both sides of the selected neutral-call seam:
+
+\begin{enumerate}
+\item \texttt{braeir\_*}: exact in-memory \texttt{BRAEIR} fields plus the scalar and stratum controls passed to \texttt{eirene\_eirsrt};
+\item \texttt{eirbra\_*}: raw source estimators, decomposed channels, stratum metadata, correction factors, and sums returned through \texttt{EIRBRA};
+\item \texttt{wneutrals\_*}: neutral state, flux, radiation, wall, pump, sputter, inventory, and resolved-surface state returned through \texttt{WNEUTRALS};
+\item \texttt{cestim\_*}: the triangular-grid particle, energy, and velocity-moment estimators used by B2's repeated-call averaging path.
+\end{enumerate}
+
+At source level, schema v2 declares 175 array variables: 39
+\texttt{braeir\_*}, three \texttt{b2\_*} controls, 39 \texttt{eirbra\_*}, 79
+\texttt{wneutrals\_*}, and 15 \texttt{cestim\_*}, plus 23 unique global
+metadata attributes. Species- and surface-dependent variables are conditional
+on their EIRENE allocations, so \texttt{ncdump -h} on the first accepted event
+is the authoritative schema for the selected DIII-D configuration.
+
+This is the training boundary: the surrogate predicts the dynamic EIRENE
+return state, and B2 performs every downstream transformation. B2 coefficients
+and physical totals are not model outputs. They may be logged separately as
+validation observables to prove that replaying a recorded return reproduces
+the native B2 result. Metadata must include component commits, mesh and
+configuration hashes, field units, array order, species/stratum maps,
+\texttt{tflux}/flux scaling/recycling settings, Monte Carlo seed and history
+count, census/restart policy, and run/iteration/call IDs.
+
+\section{Audit of the current coupling prototype}
+
+The current directory contains \texttt{b2mod\_eirene\_nn.F}, \texttt{nn\_interface.c}, and \texttt{solpex\_b2\_server.py}. It is a useful transport experiment, but the following issues can explain a failed run.
+
+\begin{longtable}{@{}p{0.06\linewidth}p{0.26\linewidth}p{0.61\linewidth}@{}}
+\toprule
+Pri. & Problem & Consequence / correction \\
+\midrule
+\endhead
+P0 & Wrong interception point & The Fortran comment proposes replacing \texttt{eirene\_eirsrt} with a routine that writes final B2 coefficients. That inner routine normally fills raw EIRENE arrays which \texttt{eirene\_mc} subsequently processes. Mixing the two levels leaves later logic inconsistent. Start at \texttt{b2stbr} or implement a complete raw-EIRENE contract. \\
+P0 & Array order mismatch & C packs each field with \texttt{iy*nx+ix} (C order); Python reshapes and flattens with \texttt{order='F'}. Inputs and outputs are permuted. Specify one canonical wire order and test it with an index ramp. \\
+P0 & Temperature units & B2 \texttt{te/ti} are joules. Training conversion uses electron-volts. The prototype sends B2 values without conversion or a declared unit. \\
+P0 & Feature mismatch & The Python server zero-fills \texttt{hx}, \texttt{hy}, and \texttt{bb0--bb3}. The legacy builder emits 22 plasma channels including corner coordinates, while the server hard-codes 14. The official v0.1.0 source bundle instead uses six plasma fields, two bundled geometry fields, and five scalar controls. These are three different schemas. \\
+P0 & Wrong inverse transform & Current training defaults to \texttt{asinh}; the server hard-codes a signed-\texttt{log1p} inverse. The checkpoint's stored transform must drive inference. \\
+P0 & Unsafe failure behavior & On socket error, Fortran keeps previous sources. A failed prediction must cause a fresh EIRENE call in the same router decision, never silent reuse. \\
+P0 & Incomplete source contract & The server returns four physical totals and discards \texttt{Sne}; B2 normally consumes multi-species semi-implicit arrays. Species 1 is hard-coded as D$^+$. \\
+P1 & ABI is not explicit & The Fortran says ISO C binding but uses \texttt{external} and a compiler-specific hidden string length. Use \texttt{bind(C)}, \texttt{iso\_c\_binding}, explicit integer/real kinds, and a fixed byte-string API. \\
+P1 & No protocol contract & There is no magic number, protocol version, request ID, byte order, units, mesh hash, species table, model hash, status, or structured error response. \\
+P1 & No timeout/gate & Socket calls can block; outputs are not checked for NaN, range, sign, integrated balance, temporal jump, or out-of-distribution state. \\
+P1 & MPI ownership unclear & Multiple ranks could contact one service independently. A first implementation should have one designated B2 rank call the service/EIRENE and broadcast the selected result and provenance. \\
+P1 & Wrong checkpoint loader & No local \texttt{eirene\_gnn.pt} was found. More importantly, the server expects an ad-hoc \texttt{.pt} object, whereas official SOLSTICE v0.1.0 publishes a bundle with \texttt{weights.safetensors}, manifest, normalization, and mesh. Use the bundle API and verify its hashes; do not rename or partially load it into the legacy server. \\
+\bottomrule
+\end{longtable}
+
+The legacy neutral-grid slice was also changed in SOLSTICE from \texttt{[1:-1,2:-2]} to \texttt{[1:-1,1:-3]}, with the older version identified as a one-column shift. If neutral diagnostics were training targets in an older checkpoint, regenerate or explicitly migrate that dataset.
+
+\section{Assessment of the released source model}
+
+\subsection{Bundle contract and a causal-input problem}
+
+The official \texttt{pepc-diiid-sources-v1} bundle was trained on 761 DIII-D APP--FPP cases on a fixed $96\times36$ mesh. Its inputs are
+\[
+(T_e,T_i,n_e,n_{D^0},n_{D^+},u_{D^+})
+\]
+plus the scalar controls \texttt{chi}, \texttt{core\_fueling}, \texttt{dna}, \texttt{ptot}, and \texttt{puff\_D2}; its node features also include two bundled geometry fields. Its outputs are
+\[
+(S_p,S_{ne},Q_e,Q_i,S_m).
+\]
+The bundle's manifest, fixed mesh, normalization, transforms, weights, and model card are a much better deployment foundation than an ad-hoc PyTorch checkpoint.
+
+There is, however, a fundamental issue for strict EIRENE replacement: current \(n_{D^0}\) is an EIRENE neutral-density output/diagnostic, not a B2 plasma input known before the neutral call. A hybrid may feed the most recent teacher value (for example \texttt{dab2}), but must record its age and reject stale/OOD states. A cleaner retraining contract either excludes this feature, uses a separately evolved neutral state, or jointly predicts the neutral state. Otherwise the training input leaks information that the production caller cannot obtain at the same time.
+
+\subsection{Official v0.1.0 metrics}
+
+The released model card reports:
+
+\begin{center}
+\begin{tabular}{lrrrr}
+\toprule
+Field & SSIM & $R^2$ & RMSE / target $\sigma$ & Peak-target error \\
+\midrule
+\texttt{Sp}  & 0.460 & 0.628 & 0.583 & 13.24\% \\
+\texttt{Sne} & 0.475 & 0.704 & 0.513 & 13.33\% \\
+\texttt{Qe}  & 0.457 & 0.698 & 0.527 & 20.71\% \\
+\texttt{Qi}  & 0.341 & 0.371 & 0.788 & 15.64\% \\
+\texttt{Sm}  & 0.241 & 0.029 & 0.970 & 13.35\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The model card explicitly labels the bundle a research preview and states that \texttt{Sm} did not learn and should not be used. \texttt{Qi} is also substantially weaker than \texttt{Sp/Sne/Qe}. These figures make the bundle suitable as a reproducible shadow-mode baseline, not as the first closed-loop provider.
+
+A separate local \texttt{eirene\_gnn\_results.csv} reports much higher pointwise $R^2$ values, but it is not the official-release metric set and its integrated errors use the wrong extra volume weighting. Keep those results as a legacy experiment until the originating checkpoint, data split, transforms, and label definitions are reconstructed.
+
+Required evaluation includes parameter-block holdouts, trajectory/time holdouts, out-of-envelope cases, repeated Monte Carlo seeds, and closed-loop solver trajectories. A random case split alone does not establish rollout safety.
+
+\subsection{Recommendation}
+
+Keep the existing model as a baseline for a \emph{shadow} experiment, not as the first production source provider. Before retraining:
+
+\begin{enumerate}
+\item Freeze one exact source contract and units.
+\item Rebuild labels from values captured at the intended B2 interception point.
+\item Include all conditioning data that vary across the ensemble, or declare those values immutable in the model manifest.
+\item Recompute direct-sum conservation and region/flux-tube metrics.
+\item Add calibrated epistemic uncertainty, preferably a small deep ensemble, and an explicit out-of-distribution score.
+\end{enumerate}
+
+\subsection{What reworking the GNN should mean}
+
+The new task is not simply the current five-input/five-output regression with more cases. Retain the existing graph encoder/process/decoder as a baseline, but version a new coupling-specific schema and test these representations by ablation:
+
+\begin{tabularx}{\linewidth}{@{}p{0.16\linewidth}YY@{}}
+\toprule
+Group & Minimum first experiment & More complete contract \\
+\midrule
+Cell inputs & \(T_e,T_i,n_e,n_i,u_{\parallel}\), geometry, volume and magnetic quantities, with units and guard policy fixed & All varying \texttt{BRAEIR} cell/species channels, including pressure/potential and mapped/drift/sheath quantities where active \\
+Face inputs & Directional incident-face particle and electron/ion energy fluxes mapped into named cell channels & Explicit face or edge features in a cell--face bipartite graph; do not collapse distinct directions silently \\
+Global inputs & Physical controls, stratum/recycling settings, call/time identifiers, fixed-configuration hash & Learned embeddings for configuration/species/wall regimes only after multiple such regimes exist in the data \\
+History inputs & Last teacher source/neutral state and its age, or no history under a canonical reset policy & Explicit recurrent/state update if cold-versus-warm tests show material memory \\
+Outputs & Final B2-facing \texttt{Sp, Sm, Qe, Qi} physical totals for a constant-coefficient pilot & B2 semi-implicit coefficients, or raw \texttt{SNI/SMO/SEE/SEI} plus required channel decompositions \\
+\bottomrule
+\end{tabularx}
+
+The current graph uses cell nodes and geometric edge attributes. For the fixed structured mesh, the quickest controlled experiment is to add each incident face flux as a separate directional node channel. The cleaner general design is a heterogeneous cell--face graph or explicit physical face attributes in message passing. Which is justified should be decided by held-out-trajectory ablations, not architecture preference.
+
+Use a separate declared transform for every signed/non-signed field; the bundle, not the server, owns normalization and inverse transforms. The loss should combine robust cellwise error with direct global sums, divertor/region and flux-tube sums, peak/target behavior, and temporal consistency. Estimate irreducible Monte Carlo variance from repeated teachers and train a small ensemble for epistemic uncertainty/OOD gating. Split by whole run/trajectory and keep all cells and repeated seeds of one 2-D background together.
+
+The state GNN need not be expanded to the full \texttt{fort.31} contract immediately. Its highest-value first role is proposing a warm-start state for B2. If direct background generation later becomes necessary, it will need new face-output heads, boundary/guard handling, multi-species outputs, and physics-consistency losses; that is a second model-development task, not a prerequisite for the first EIRENE replay database.
+
+\section{Comparison with Zhang et al. (2025)}
+
+\href{https://doi.org/10.1088/2058-6272/add1b0}{Zhang et al., ``Calculation of neutral source terms with deep learning to accelerate edge plasma simulations,'' Plasma Science and Technology 27 (2025) 075106} is the closest published example found to the proposed coupling. It provides strong feasibility evidence, but it also exposes the failure mode that motivates a gated hybrid rather than unconditional replacement.
+
+\subsection{What they trained and coupled}
+
+\begin{longtable}{@{}p{0.17\linewidth}p{0.36\linewidth}p{0.39\linewidth}@{}}
+\toprule
+Aspect & Zhang et al. & Implication for this project \\
+\midrule
+\endhead
+Configuration & Fixed $24\times96$ EAST upper-single-null mesh, pure deuterium, fixed puff, full recycling, fixed transport profiles; attached conditions only. & A fixed-configuration D$_2$ pilot is scientifically defensible, but its domain must be stated narrowly. \\
+Scan/data & Approximately 600 SOLPS--ITER samples from core-edge density $1.2$--$3.0\times10^{19}\,\mathrm{m^{-3}}$, $P_{\mathrm{SOL}}=2$--$9$ MW, and both toroidal-field directions; about 7:2:1 train/validation/test. Far-from-steady backgrounds were excluded. & Existing coupled scans are the correct first corpus, but this project should also log transient/off-steady calls because the intended hybrid will encounter them. \\
+Inputs & Complete 2-D plasma background from \texttt{fort.31}, represented as $24\times96\times22$: densities, temperatures, pressure, several velocity/flow components, particle/heat fluxes, drift velocity, magnetic fields/pitch, and electric potential. & This is far closer to the actual EIRENE conditioning state than the current five/six-field source model. Use it as the baseline input contract, then remove channels only by ablation. \\
+Targets & Four quantities for each of seven EIRENE strata, hence $24\times96\times28$: particle, parallel momentum, electron-energy, and ion-energy source. They do not train an independent \texttt{Sne}. & Per-stratum outputs preserve more information than five stratum-summed diagnostics and align with B2's four main equations, but they are still a reduced projection of the raw EIRENE return contract. They must not be described as a drop-in raw-interface schema without tracing the omitted components and channels. \\
+Architecture & Eight topology-aware patches with masked Transformer attention; target-biased smooth-L1 loss gives extra weight to target strata. & Their topology prior is useful evidence, but a cell/face graph avoids hard-coding one equal patch partition and is more extensible. \\
+Deployment & ONNX Runtime with file-based B2.5--NN exchange. EIRENE first brings each test case near steady state; the NN is then activated. & Confirms that file-mediated prototyping is feasible. The production safety decision should still reside in the B2-side router. \\
+\bottomrule
+\end{longtable}
+
+The plotted fields are \(S_p\sqrt{g}\,[\mathrm{s^{-1}}]\), \(S_{m,hz}\sqrt{g}\,[\mathrm{N\,m}]\), and \(Q_e\sqrt{g},Q_i\sqrt{g}\,[\mathrm{W}]\). The notation and units strongly indicate Jacobian-weighted/cell-integrated B2 equation contributions, not volumetric densities. This is consistent with the source trace in this note and is additional evidence that multiplying these targets by cell volume during integration is incorrect.
+
+However, the paper does not name the exact output file or \texttt{EIRMOD\_EIRBRA}/B2 arrays used to form the 28 channels. It also does not state whether stratum scaling, coordinate mapping, corrections, or B2 semi-implicit linearisation occurred before the saved target. Thus ``they trained \texttt{Sp/Sm/Qe/Qi} per stratum'' is established, but ``they trained the exact raw \texttt{SNI/SMO/SEE/SEI} contract'' is not. The three-layer logger remains necessary.
+
+\subsection{Results and limitations}
+
+Their strongest results are meaningful:
+
+\begin{itemize}
+\item peak-source errors of roughly 5\% for particle and 3\% for electron energy;
+\item errors up to roughly 20\% for momentum and ion energy;
+\item 80--90\% lower time per step after replacing the neutral call;
+\item less than 5\% difference in peak divertor target particle and heat fluxes for the reported converged cases.
+\end{itemize}
+
+They also quantify the Monte Carlo floor near peaks: repeated high-statistics EIRENE responses differ by at most about 2.5\% for particle, 1.5\% for electron energy, and 10\% for momentum/ion energy. Low-statistics default EIRENE data substantially worsen training. This strongly supports repeated seeds, high-statistics teachers for selected cases, and noise-aware losses rather than treating each instantaneous EIRENE field as exact.
+
+The most important result for the hybrid design is negative: some held-out B2.5--NN cases diverged after the evolving plasma moved outside the training distribution, creating a positive feedback loop between source error and plasma-state drift. The paper has no calibrated OOD/uncertainty gate, periodic teacher refresh, or same-call EIRENE fallback. It suggests dynamic weight updates or a larger dataset; for a solver-facing production workflow, immutable in-run weights plus forced/uncertainty-triggered EIRENE calls and offline promotion are safer and more auditable.
+
+Other limitations are a narrow attached/near-steady domain, activation only after an EIRENE-generated quasi-steady state, no reported global/regional balance acceptance tests, no explicit treatment of B2 source Jacobian/linearisation, and no public data/model/interface implementation identified in the paper. Therefore its reported speedup is a feasibility result for preliminary divertor design, not evidence that ungated NN replacement is reliable over arbitrary SOLPS trajectories.
+
+\subsection{Recommended Zhang-contract baseline}
+
+Reproduce their most useful experiment within the present pinned D$_2$ configuration, but make the contract explicit:
+
+\begin{enumerate}
+\item input the full saved/in-memory \texttt{BRAEIR}/\texttt{fort.31} 2-D field bundle, with named units and cell/face locations;
+\item for a paper-reproduction baseline only, predict the four reported source families per stratum; do not use those 28 channels as the production raw-seam contract;
+\item log raw EIRENE arrays, B2 coefficients, and physical totals for the same calls so the two target choices can be compared without rerunning the ensemble;
+\item define the faithful deployment target from the complete set of raw arrays read after \texttt{eirsrt}, preserving species, three-component momentum, strata, reaction-channel information required downstream, and any uncertainty/statistical fields that affect B2 processing;
+\item train on high-statistics/repeated-seed teachers for a representative subset and include transient coupled states;
+\item deploy only in shadow mode first, followed by a gated hybrid with periodic teacher calls and deterministic fallback;
+\item compare against both EIRENE-every-call and native source reuse, not only against full EIRENE.
+\end{enumerate}
+
+This preserves the strongest aspects of Zhang et al.---full \texttt{fort.31} conditioning, per-stratum targets, topology awareness, and closed-loop testing---while treating their 28-channel output as a reproducible benchmark rather than evidence that the full raw contract contains only four families. It also directly addresses the distribution-shift failure they observed.
+
+\section{Recommended hybrid architecture}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small,frame=single]
+                         offline / between runs
+                 +----------------------------------+
+                 | event store -> trainer -> tests  |
+                 |             -> immutable bundle  |
+                 +------------------^---------------+
+                                    | teacher pairs + audit records
+                                    |
+B2.5 b2stbr -> neutral-source router+------------------------------+
+                  |                                                |
+                  | protocol + state                               |
+                  v                                                v
+          SOLSTICE inference service                       existing eirene_mc
+          prediction + uncertainty                         in-process teacher
+                  |                                                |
+                  +------------ gate / compare <-------------------+
+                                    |
+                      selected B2-facing source arrays
+                                    |
+                       add to B2 equation sources
+\end{lstlisting}
+
+\subsection{Where the middleware belongs}
+
+The safety-critical router belongs on the B2/Fortran side because only that side can always call the linked EIRENE implementation. The Python service may fail, time out, or be absent without preventing the router from choosing EIRENE. The service should perform only model loading, validated inference, and uncertainty reporting. Logging and retraining are control-plane functions and should not be synchronous dependencies of every solver iteration.
+
+\subsection{Router modes}
+
+\begin{tabularx}{\linewidth}{@{}lYY@{}}
+\toprule
+Mode & Source used by B2 & Purpose \\
+\midrule
+\texttt{teacher} & EIRENE only & Establish unchanged reference behavior and collect exact pairs. \\
+\texttt{shadow} & EIRENE; NN also evaluated & Compare on the exact trajectory with zero NN effect on the solver. \\
+\texttt{hybrid} & NN only when every gate passes; otherwise EIRENE & Reduce calls while preserving a same-call fallback. Force periodic EIRENE calls. \\
+\texttt{nn-only} & NN, except hard failure fallback & Research mode only after closed-loop qualification; not the first deployment target. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Gate sequence}
+
+An NN result is eligible only if all checks pass:
+
+\begin{enumerate}
+\item Protocol, bundle, mesh, species, topology, and units match exactly.
+\item Input state is finite and physically valid.
+\item Input lies inside the calibrated training envelope; ensemble uncertainty is below threshold.
+\item Prediction is finite and passes sign/range checks appropriate to each source.
+\item Direct global sums, regional sums, and flux-tube behavior pass learned/physics plausibility bounds.
+\item Change from the last accepted source is consistent with the change in plasma state.
+\item The call is not a forced teacher refresh (first $N$ calls, every $K$ eligible calls, after a large state jump, and after any solver difficulty).
+\end{enumerate}
+
+Any timeout, exception, mismatch, failed check, or unknown status selects EIRENE. The returned record must state which provider was used and why.
+
+\subsection{Protocol minimum}
+
+The wire request/response should include:
+
+\begin{itemize}
+\item magic bytes, protocol version, request ID, byte order, numeric dtype;
+\item \texttt{nx}, \texttt{ny}, species names/charges/masses, and explicit array order;
+\item declared units for every field;
+\item mesh/topology hash, run-configuration hash, and model-bundle hash;
+\item iteration/time/call identifiers and router mode;
+\item response status, uncertainty fields, OOD score, gate diagnostics, and inference time.
+\end{itemize}
+
+Use a small fixed header plus contiguous arrays. A Unix socket is reasonable for a same-node prototype, but set connect/read/write deadlines and verify an index-ramp round trip before model inference is introduced.
+
+\section{How to use GLUE}
+
+GLUE's active-learning loop is conceptually well aligned: predict, evaluate uncertainty, request a fine-grain answer when uncertain, store ground truth, and retrain after enough new examples. Its result provenance and configurable ground-truth threshold are also useful patterns.
+
+The current implementation is not a direct fit because it is organized around BGK/LAMMPS scalar schemas, database-polled requests, and launching a separate fine-grain batch job. In this coupling, EIRENE is already in the B2 process and a request contains several full mesh fields. Putting SQLite polling between B2 and every source update would add a new latency and failure surface.
+
+Recommended reuse boundary:
+
+\begin{tabularx}{\linewidth}{@{}YY@{}}
+\toprule
+Adopt/adapt & Do not adopt unchanged \\
+\midrule
+Request IDs and result provenance & BGK-specific table and C/Fortran structs \\
+Ground-truth cache/event record & SQLite polling in the iteration hot path \\
+Uncertainty accept/reject decision & Slurm/Flux launch of EIRENE as an external job \\
+Ground-truth accumulation threshold & Automatic in-run replacement of model weights \\
+Immutable model versions and audit log & Scalar schema for array-valued mesh fields \\
+\bottomrule
+\end{tabularx}
+
+Thus, ``GLUE-inspired'' is a good architectural decision; ``repurpose the whole GLUE service'' is not recommended for the first coupling.
+
+\section{Building the teacher dataset}
+
+\subsection{Use the existing coupled runs first}
+
+The existing B2--EIRENE parameter scans are the highest-value starting point because their plasma states obey the B2 equations, boundary conditions, quasineutrality/species constraints, and the feedback created by earlier neutral calls. They should be catalogued before launching a new broad campaign. For each run, record which of the following tiers can be recovered:
+
+\begin{longtable}{@{}p{0.18\linewidth}p{0.34\linewidth}p{0.40\linewidth}@{}}
+\toprule
+Archive tier & Available artifacts & What can be learned \\
+\midrule
+\endhead
+Exact paired event & New three-layer event record from an instrumented coupled call & Full candidate training contract; suitable for raw-return, B2-coefficient, or physical-total models. \\
+Replayable input & \texttt{fort.30/31}, EIRENE inputs, atomic/wall/species files, restart/census policy, and version metadata & Run standalone EIRENE again and capture the missing raw output with a new writer. This is the best way to upgrade old cases. \\
+Postprocessed pair & B2 state plus \texttt{balance.nc}, with inputs and versions & Useful for reproducing the legacy reduced \texttt{Sp/Sne/Qe/Qi/Sm} experiment, coverage analysis, and pretraining; not proof of the exact interface target. \\
+Diagnostics only & \texttt{balance.nc} and/or \texttt{fort.44/46} without the matching background or provenance & Useful for exploratory statistics, but insufficient as a trustworthy supervised pair. \\
+\bottomrule
+\end{longtable}
+
+Do not split individual iterations from the same coupled run randomly across train and test. Group by base run/trajectory, control block, mesh, and configuration so the validation set measures interpolation across genuinely unseen trajectories rather than near-duplicate solver iterations.
+
+\subsection{Steady endpoints, trajectory states, and cold regimes}
+
+The present archive is predominantly converged or near-converged final states. That is valuable for learning the steady solution manifold, but it is not by itself the state distribution seen by a surrogate used during B2 convergence. An intermediate B2 iterate is not automatically ``unphysical'': EIRENE computes the neutral response to the instantaneous plasma background and does not require that background to satisfy the final steady fluid balance. Intermediate states from trajectories that later converge are therefore directly relevant training examples. In contrast, states corrupted by negative/clipped variables, exploding residuals, inconsistent boundaries, or other numerical failure should be rejected or retained only as router/OOD tests.
+
+The efficient augmentation is not a new broad ensemble of four-hour converged simulations. Select a stratified subset of archived warm, cold, attached, near-detached, high-density, high-puff, and parameter-extreme states; restart them; apply controlled changes to one or two physical controls; and log separated EIRENE calls while B2 relaxes. The trajectory may be stopped after it has covered the transition of interest. This yields many physically correlated backgrounds per restart while avoiding hundreds of new flat-start convergences. All snapshots descended from one base run remain in the same data split.
+
+Cold and detachment-transition regions deserve special treatment. They can have large neutral densities, molecular/recombination contributions, sharp ionization fronts, and strong sensitivity of target observables to small source errors. They can also exhibit unfavorable signal-to-Monte-Carlo-noise ratios in weak channels. Consequently, the first router should call EIRENE \emph{more}, not less, in cold or rapidly moving-front regimes unless uncertainty and held-out trajectory tests demonstrate reliable surrogate behavior. Coldness is a risk feature, not a sufficient gate by itself; combine temperature and gradient/front indicators with ensemble uncertainty, distance from the training manifold, state-change magnitude, balance residuals, and solver health.
+
+A practical regime policy is:
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}p{0.34\linewidth}X@{}}
+\toprule
+Regime & Initial action \\
+\midrule
+Warm/attached and well represented & Permit NN when all gates pass; refresh periodically with EIRENE. \\
+Cold but densely represented & Permit NN only at low calibrated uncertainty and small state change. \\
+Moving ionization/detachment front & Increase forced EIRENE frequency and collect active-learning pairs. \\
+OOD, invalid, or degraded solver state & Same-call EIRENE fallback; do not use the sample as ordinary regression data. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+For an APS-DPP-scale milestone, the defensible scope is: train the archived steady/postprocessed baseline; implement the raw three-layer logger; collect a small deliberately selected transient/cold challenge set from restart trajectories; measure the degradation of the steady-only model; and demonstrate that trajectory augmentation plus an EIRENE gate reduces harmful accepts. Full raw-contract training over the entire archive can follow after the meeting.
+
+\subsection{Standalone EIRENE as a targeted teacher farm}
+
+Standalone EIRENE is a strong analogue of the fine-grain solver in the LAMMPS/BGK GLUE workflow. With a fixed mesh and EIRENE configuration, vary \texttt{fort.31} while preserving \texttt{fort.30}, wall/recycling definitions, species and strata, atomic/molecular data, and all other inputs. Add an output hook once all strata are assembled to write \texttt{EIRMOD\_EIRBRA}; a hook immediately after \texttt{eirene\_eirsrt} returns in the B2 wrapper is unambiguous for coupled calls. If a pure standalone driver writes only raw returns, replay those returns through the same deterministic B2 scaling/linearisation adapter to obtain B2-facing coefficients and totals.
+
+\warningbox{The hard part of a standalone campaign is not launching EIRENE; it is choosing a physically reachable plasma background. An independently randomized collection of \(T_e,T_i,n,u\), face fluxes, sheath quantities, and magnetic/geometry fields will generally violate the correlations enforced by B2. It may produce a valid EIRENE calculation but an irrelevant or misleading training sample. Therefore archived coupled backgrounds and new B2-generated backgrounds are the primary proposal mechanism; standalone EIRENE is initially a replay and replication engine.}
+
+One training example is a complete correlated two-dimensional state on the structured plasma mesh, not a bag of independent cell samples. It includes cell fields, face-flux fields, boundary/guard cells, species channels, and the fixed geometry/topology identity. The effective dimension is therefore very high even though the state lies on a much lower-dimensional physical manifold. Sampling each cell or each field independently would destroy spatial structure and cross-field consistency.
+
+The practical hierarchy for proposing 2-D backgrounds is:
+
+\begin{enumerate}
+\item archived whole-mesh snapshots from existing coupled runs;
+\item new whole-mesh snapshots obtained by varying a modest set of physical B2 inputs/controls and running B2--EIRENE;
+\item only after enough valid snapshots exist, low-dimensional POD/PCA, autoencoder, or state-model proposals built from the \emph{joint} bundle of 2-D fields, restricted to interpolation or a calibrated neighborhood of the observed manifold;
+\item active-learning proposals accepted only after nearest-neighbor/OOD, field-bound, spatial-smoothness, conservation/constraint, boundary, and face-flux consistency checks.
+\end{enumerate}
+
+All cells from one 2-D snapshot share one sample ID and one train/validation/test assignment. Metrics must be evaluated both fieldwise and as integrated/regional quantities; treating the thousands of cells as independent samples would greatly overstate dataset size and validation independence.
+
+\subsection{Use the SOLPS-NN state model as a proposal generator}
+
+The released SOLSTICE state bundle, \texttt{pepc-diiid-state-v1}, directly addresses the two-dimensional sampling problem. From the five effective controls \texttt{chi}, \texttt{core\_fueling}, \texttt{dna}, \texttt{ptot}, and \texttt{puff\_D2}, it predicts whole-mesh \texttt{te}, \texttt{ti}, \texttt{ne}, \texttt{na\_D1}, \texttt{ua\_D1}, \texttt{q\_pol}, and \texttt{prad}. Its reported $R^2$ values are 0.995, 0.984, 0.942, 0.942, 0.962, 0.922, and 0.819 respectively. It also emits \texttt{na\_D0}, but the model card reports $R^2\simeq-0.01$ and explicitly says not to use it.
+
+This is a very good candidate-state generator, but it does not by itself produce a complete \texttt{fort.31}: the exact EIRENE background also includes multiple face particle/energy fluxes, pressure/potential, mapped/vector and drift velocities, sheath corrections, charge/species channels, and guard/boundary cells. The predicted cellwise \texttt{q\_pol} is not a substitute for all of those interface arrays. It also does not resolve the source model's dependence on current \texttt{na\_D0}, because that neutral field did not learn and is not causally available before EIRENE.
+
+The recommended lifting workflow is therefore
+
+\begin{lstlisting}[basicstyle=\ttfamily\small,frame=single]
+physical controls
+  -> SOLPS-NN whole-mesh state proposal
+  -> write b2fstati / warm-start a matching reference case
+  -> short B2 consistency or relaxation run
+  -> exact copy_background / fort.31 state
+  -> standalone or coupled EIRENE teacher call
+\end{lstlisting}
+
+Here the state network chooses promising 2-D states and reduces the cost of reaching them; B2 remains the physics-based ``lifting'' operator that completes missing fields and rejects inconsistent proposals. Store both the original NN proposal and the relaxed B2 background so the correction size can be measured. A large correction, failed B2 residual check, topology/configuration mismatch, or out-of-range control request rejects the proposed sample. After enough paired proposals exist, a separate learned lifting model could be considered, but it should be validated against the B2-generated full contract and is not required for the first database.
+
+Use the teacher farm in this order:
+
+\begin{enumerate}
+\item Replay archived \texttt{fort.31} backgrounds from the existing coupled scans and compare regenerated diagnostics with their saved outputs.
+\item Repeat a representative subset with independent Monte Carlo seeds. Start with three to five seeds per background, then allocate more where observed variance is high. Train the conditional mean and model the teacher variance; do not train the network to reproduce shot noise.
+\item Measure history dependence by running matched cold/reset and warm/restart cases. If census or prior neutral state materially changes the return, either enforce a canonical reset for every database sample or include an explicit prior-state descriptor in the model contract.
+\item Analyze coverage of the coupled archive in plasma/control-feature space. Add new states only where coverage or model uncertainty is poor.
+\item For new coverage, vary physical controls and boundary conditions. Use the SOLPS-NN state prediction as a \texttt{b2fstati} warm start where applicable, then let B2 relax and generate the complete consistent background. This is slower than directly editing \texttt{fort.31}, but it preserves the reachable-state manifold and should be faster than flat-start convergence.
+\item Only after the baseline database exists, test constrained low-dimensional interpolation/perturbation between nearby valid backgrounds. Preserve positivity, quasineutrality, species consistency, boundary/sheath relationships, face-flux consistency, and spatial smoothness. Reject candidates using B2 residual/constraint checks before sending them to EIRENE. Avoid independent random perturbations of every cell.
+\item Close the loop with fresh instrumented coupled shadow trajectories, since a surrogate changes the future B2 state distribution even if its one-call errors are small.
+\end{enumerate}
+
+Each teacher record must retain the random seed, particle histories, runtime, restart/census identity, and background hash. Multiple seeds for one background belong to the same data split. The resulting database has two complementary parts: a broad standalone replay/augmentation set for coverage and a coupled shadow set for calibration and closed-loop relevance.
+
+\section{Staged implementation plan}
+
+\subsection{Phase 0: freeze a reproducible baseline}
+
+\begin{itemize}
+\item Record top-level, B2.5, EIRENE, SOLSTICE, compiler, MPI, and input-file hashes.
+\item Inventory the existing coupled-run archive by the four tiers above; hash and index all recoverable \texttt{fort.31}, \texttt{balance.nc}, \texttt{fort.44/46}, restart/census, and configuration files without modifying them.
+\item Reproduce one unmodified coupled SOLPS--EIRENE case at the pinned revisions.
+\item Create a B2.5 feature branch/fork for the router; keep EIRENE unmodified initially.
+\item Define one D$_2$-only reference configuration before generalizing species.
+\end{itemize}
+
+Exit criterion: repeated teacher runs have understood Monte Carlo variability and stable integrated diagnostics.
+
+\subsection{Phase 1: contract logger, no surrogate in the loop}
+
+The observation-only \texttt{eirene\_training\_v2} logger is implemented and
+awaiting full MPI build/runtime acceptance. For every call it must:
+
+\begin{itemize}
+\item capture exact \texttt{EIRMOD\_BRAEIR} input arrays immediately after \texttt{copy\_background};
+\item capture the complete call-dependent \texttt{EIRBRA}, \texttt{WNEUTRALS}, and applicable \texttt{CESTIM} return state immediately after \texttt{eirene\_eirsrt};
+\item leave the native B2 mapping, scaling, corrections, averaging, accumulation, and linearisation code unchanged;
+\item capture species, mesh, run configuration, call count, stratum settings, and EIRENE provenance;
+\item optionally capture downstream B2 values for validation only, and validate direct sums against B2's own regional/global totals.
+\end{itemize}
+
+Use an append-only NetCDF/HDF5/Zarr record outside the hot decision path. A compact index/log may be SQLite, but large arrays should not be SQL columns.
+
+Exit criterion: schema and finite-value checks pass; logger-on and logger-off
+restarts agree; repeated-call averages are reproduced; and replaying a
+recorded return through a test hook reproduces the exact B2-facing arrays and
+a short solver trajectory within a defined tolerance.
+
+\subsection{Phase 2: archive replay and standalone teacher farm}
+
+\begin{itemize}
+\item Do not schedule 761 new full SOLPS convergences. First replay a small stratified subset of recoverable archived \texttt{fort.31}/restart backgrounds under their matching fixed configuration and capture raw returns with the new writer.
+\item Benchmark one restart configured to stop after a single instrumented EIRENE call. Use that measured cost and replay fidelity---not the original four-hour convergence cost---to decide whether later raw replay should cover tens, hundreds, or all recoverable backgrounds.
+\item Quantify Monte Carlo variance and cold-versus-warm state dependence before choosing dataset size or model loss.
+\item Deduplicate by background/configuration hash and make grouped train/validation/test partitions before augmentation.
+\item Test the SOLPS-NN $\rightarrow$ \texttt{b2fstati} $\rightarrow$ B2-relaxation lifting workflow on held-out archived controls; measure field correction, residual, runtime, and whether the resulting background reproduces the reference EIRENE answer.
+\item Add constrained backgrounds selected by coverage gaps or active-learning uncertainty; retain B2-lifted/fresh coupled calls as the authoritative distribution/calibration set.
+\end{itemize}
+
+Exit criterion: replay is reproducible within measured Monte Carlo noise; every sample has complete provenance; the dataset report distinguishes archived, replayed, augmented, and fresh-coupled samples.
+
+\subsection{Phase 3: shadow service and protocol hardening}
+
+\begin{itemize}
+\item Implement an ISO-C-bound client and versioned wire protocol.
+\item Make one MPI rank the request owner and broadcast results.
+\item Package the model as an immutable SOLSTICE bundle with exact input/output names, units, mesh hash, normalization, transform, metrics, and training provenance.
+\item Run NN and EIRENE for the same calls; always apply EIRENE.
+\item Recompute direct-sum, regional, flux-tube, target-region, temporal, and uncertainty-calibration metrics.
+\end{itemize}
+
+Exit criterion: transport round trips are exact; the service can be killed at arbitrary calls without changing the teacher result; shadow metrics meet thresholds on held-out trajectories.
+
+\subsection{Phase 4: benchmark the reduced target, then train the raw contract}
+
+Use final physical totals \texttt{Sp, Sm, Qe, Qi} at the \texttt{b2stbr} seam only as an offline/shadow benchmark and as a diagnostic upper bound on what a compact target can learn. A constant-component insertion test can still be useful because it resembles B2's averaged-source mode, but it intentionally bypasses part of B2's native source construction and must not be confused with raw EIRENE equivalence.
+
+For the current archive, this reduced experiment is not a unit mismatch: the network and its deployment adapter both operate on the same B2-scaled, reconstructed physical source. Do not apply an attempted inverse scaling to these targets. Instead, name the contract \texttt{b2\_physical\_source\_v1}, record that its coefficient/Jacobian information is absent, and test its closed-loop stability explicitly. Conversely, never send these values through the raw \texttt{SNI/SMO/SEE/SEI} path; that would apply B2 scaling a second time and create precisely the mismatch of concern.
+
+The deployment candidate should predict the complete dynamic post-\texttt{eirsrt} contract: the species/component/stratum-resolved \texttt{EIRBRA} sources and channels, the call-dependent \texttt{WNEUTRALS} state and tallies, and the applicable \texttt{CESTIM} estimators. Feed those predictions through the unchanged B2 post-return path. Copy fixed metadata and exact pass-through quantities in the adapter. Remove a dynamic target only after a documented read-set or algebraic-redundancy proof and an ablation with replay-equivalence tests.
+
+Exit criterion: offline replay and shadow validation reproduce both the raw arrays and the resulting B2 coefficients/physical totals; closed-loop tests show calibrated gating and stable solver behavior.
+
+\subsection{Phase 5: gated hybrid calls}
+
+Start conservatively:
+
+\begin{itemize}
+\item first $N$ eligible calls: EIRENE;
+\item between refreshes: use NN only when all gates pass;
+\item every $K$ calls: force EIRENE, compare, and append ground truth;
+\item on state jump, uncertainty, timeout, NaN, solver warning, or residual degradation: EIRENE;
+\item never change the deployed model bundle within a nonlinear solve or time step.
+\end{itemize}
+
+Compare three baselines, not just two:
+
+\begin{enumerate}
+\item EIRENE every call;
+\item native \texttt{eirene\_mod=K}, which skips calls and reuses old sources;
+\item hybrid NN between forced EIRENE calls.
+\end{enumerate}
+
+The hybrid is valuable only if it improves the speed/accuracy tradeoff over native source reuse.
+
+\subsection{Phase 6: retraining and promotion}
+
+Accumulate rejected/forced-teacher pairs during runs. Retrain offline between runs or at an explicit safe checkpoint. Promotion requires:
+
+\begin{itemize}
+\item frozen training snapshot and code/config hashes;
+\item held-out parameter and trajectory tests;
+\item replay of previously difficult/rejected calls;
+\item shadow test in a fresh solver trajectory;
+\item immutable bundle ID and atomic rollback to the previous bundle.
+\end{itemize}
+
+Trigger retraining from both sample count and coverage/error criteria; GLUE's fixed ground-truth count alone is not sufficient. Never silently hot-swap weights during a B2 nonlinear iteration.
+
+\section{Validation matrix and decision gates}
+
+\begin{longtable}{@{}p{0.18\linewidth}p{0.35\linewidth}p{0.39\linewidth}@{}}
+\toprule
+Level & Test & Pass condition \\
+\midrule
+\endhead
+Transport & Index-ramp and sentinel fields through Fortran--C--Python round trip & Bitwise exact ordering, dtype, shape, and guard-cell policy. \\
+Units & Joule/eV, density, velocity, particle, power, momentum checks & Every conversion named in protocol and unit-tested against one known cell and B2 integrated output. \\
+Teacher equivalence & Router in teacher mode versus unmodified B2.5 & Same source arrays and solver result within Monte Carlo/reduction tolerance. \\
+Offline model & Case, parameter-block, and trajectory holdouts & Thresholds set per field on direct sums, region/flux-tube errors, target region, signs, and tails; not $R^2$ alone. \\
+Gate calibration & Accepted versus rejected shadow predictions & Very low harmful-accept rate; EIRENE selected for OOD and injected failures. \\
+Closed loop & Full SOLPS convergence and transient tests & No regression in convergence rate, particle/power balance, target heat/particle flux, separatrix profiles, and stability. \\
+Performance & EIRENE-every-call, native reuse, hybrid & End-to-end speedup includes inference, communication, forced teachers, and fallbacks; hybrid outperforms native reuse at matched error. \\
+Operations & Kill server, corrupt response, wrong mesh/model, delayed response & Deterministic same-call EIRENE fallback and useful provenance; no deadlock. \\
+\bottomrule
+\end{longtable}
+
+Numerical thresholds should be set from teacher repeatability and application sensitivity, not chosen solely from the present CSV. A reasonable process is to define them after Phases 1--2, freeze them before Phase 4 model selection, and report both accepted-call and all-call distributions.
+
+\section{Immediate next actions}
+
+\begin{enumerate}
+\item Preserve the completed read-only archive audit in a manifest of run path, mesh/configuration hash, controls, B2/EIRENE versions, and the presence/size/hash of \texttt{fort.30/31}, \texttt{fort.13/15}, \texttt{fort.44/46}, \texttt{balance.nc}, and restart/input files.
+\item Canonicalize the balance target schema to the seven configured \texttt{W,E,S,S,N,C,V} strata; assert that an exposed eighth slot is zero. Resolve \texttt{MPPL} versus \texttt{CPPV} from the producing source revision or a controlled identity test before combining momentum labels.
+\item Declare the first archived-data model explicitly as \texttt{fort.31/BRAEIR -> b2\_physical\_source\_v1}; do not describe it as a raw EIRENE surrogate and do not attempt to unscale its targets.
+\item Select one archived run with the fullest provenance and determine whether its complete 2-D background can be replayed. Do not begin by inventing synthetic plasma distributions.
+\item Finish the MPI build of the isolated \texttt{feature/eirene-training-dump} tree, then produce and validate one schema-v2 paired event. Do not modify the established \texttt{solps-iter-3.0.8-devel} installation.
+\item Restart the selected case for one instrumented EIRENE call, compare with saved diagnostics, and measure the true replay cost. Repeat with several EIRENE seeds only after the single-call path is verified.
+\item Build a small grouped transient/cold challenge set from controlled restart trajectories. Keep valid intermediate states; reject numerical failure states from ordinary regression training.
+\item On archived held-out controls, benchmark the released state model as a warm start: predict the 2-D state, write \texttt{b2fstati}, let B2 complete/relax it, and compare the resulting full background and teacher sources with the archived reference.
+\item Rebuild the legacy labels and metrics from the archive as a baseline, correcting the direct-sum integration and quantifying \texttt{piel}/core-particle omissions. Keep the official v0.1.0 bundle as a separate, immutable baseline and do not use its \texttt{Sm} output for coupling.
+\item Only after the data contract and replay are verified, build shadow mode with the SOLSTICE bundle API and versioned protocol; leave the existing solver path authoritative.
+\end{enumerate}
+
+\section{Source links}
+
+\begin{itemize}
+\item Top-level repositories: \href{https://github.com/iterorganization/SOLPS-ITER}{official SOLPS-ITER}, \href{https://github.com/jlore/SOLPS-ITER}{Jeremy fork}, \href{https://github.com/abdoudiaw/SOLPS-ITER}{Abdou fork}.
+\item B2.5 pinned source: \href{https://github.com/iterorganization/B2.5/blob/cb7d15b2878074bb450666bebee4b1df02ef79e6/src/sources/b2stbr.F}{\texttt{b2stbr.F}}, \href{https://github.com/iterorganization/B2.5/blob/cb7d15b2878074bb450666bebee4b1df02ef79e6/src/sources/b2mod_eirene.F}{\texttt{b2mod\_eirene.F}}, \href{https://github.com/iterorganization/B2.5/blob/cb7d15b2878074bb450666bebee4b1df02ef79e6/src/sources/eirene_f30f31.F}{\texttt{eirene\_f30f31.F}}, \href{https://github.com/iterorganization/B2.5/blob/cb7d15b2878074bb450666bebee4b1df02ef79e6/src/modules/b2mod_balance.F}{\texttt{b2mod\_balance.F}}.
+\item EIRENE pinned interface: \href{https://github.com/iterorganization/EIRENE/blob/f8f63fa0f69d7fb64a7d19f2ec372fd58eb5efc5/src/interfaces/couple_SOLPS-ITER/eirmod_braeir.f}{B2 $\rightarrow$ EIRENE arrays}, \href{https://github.com/iterorganization/EIRENE/blob/f8f63fa0f69d7fb64a7d19f2ec372fd58eb5efc5/src/interfaces/couple_SOLPS-ITER/eirmod_eirbra.F}{EIRENE $\rightarrow$ B2 arrays}, \href{https://github.com/iterorganization/EIRENE/blob/f8f63fa0f69d7fb64a7d19f2ec372fd58eb5efc5/src/interfaces/couple_SOLPS-ITER/eirmod_infcop.F}{mapping and scaling}, \href{https://github.com/iterorganization/EIRENE/blob/f8f63fa0f69d7fb64a7d19f2ec372fd58eb5efc5/src/interfaces/couple_SOLPS-ITER/eirmod_extrab25.F90}{\texttt{fort.44/46} diagnostics}.
+\item Middleware/model repositories: \href{https://github.com/abdoudiaw/GLUE}{Abdou GLUE fork}, \href{https://github.com/lanl/GLUE}{LANL GLUE}, \href{https://github.com/abdoudiaw/solstice}{active Abdou SOLSTICE repository}, \href{https://github.com/abdoudiaw/solstice/pull/1}{active SOLSTICE pull request 1}, and \href{https://github.com/ORNL-Fusion/solstice}{ORNL SOLSTICE reference repository (read-only for this project)}.
+\item Closest published coupling study: \href{https://doi.org/10.1088/2058-6272/add1b0}{Zhang et al., Plasma Science and Technology 27 (2025) 075106}.
+\end{itemize}
+
+\end{document}
