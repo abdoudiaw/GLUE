@@ -140,6 +140,48 @@ curve (`log.jsonl`), wall time per epoch, and anything that failed.
   `test_bundle` failures are a missing `safetensors` in some environments, not a
   regression).
 
+## Status 2026-10-09 (Perlmutter)
+
+Smoke test passed; four seeds (0-3) trained on a Jupyter node in 28 min each
+(1.1 s/epoch, best validation epoch 102-126 of 1500, i.e. the schedule can be cut
+~10x). Test, weighted fields, rel L2 median: sni 10.5-11.9 %, see 10.6-11.8 %,
+smo 23.9-27.3 %, sei 33-35 %: at or below the EIRENE Monte Carlo floor on all
+four. Runs: `$SCRATCH/eirene_nn/runs/eirene_sources_v3_jnode_s{0..3}`, summary
+`$SCRATCH/eirene_nn/runs/SUMMARY.md`. Batch jobs 59601584 (seed 0) and
+59601657/59/60/61 (seeds 1-4) queued for the weekend under
+`runs/eirene_sources_v3{,_s1..4}`.
+
+### GLUE2 learner: `solstice_sources` (`glue2/glue2/solstice_learner.py`)
+
+The SOLSTICE seed ensemble behind the Learner/Bundle protocol (mean, errbar,
+score, novelty, ok), registered next to `pca_ridge` (`learner: solstice_sources`
+in the config; `learner_params`: `members`, `epochs`, `mesh_store`, `fussiness`,
+`novelty_max`, `knn`, or `runs: [...]` to wrap trained runs). `fit()` trains the
+seeds with the same command as `glue2 train`, then calibrates on the validation
+split: errbar per source kind = member spread in the trainer's normalized metric
+x a scale that matches the mean error; `rmse` = held-out error in that metric;
+`score = max errbar / rmse`, gate `score <= fussiness` and `novelty <= novelty_max`
+(k-NN distance of a per-case summary of the normalized inputs to the training
+cases). `predict()` returns the sources in the event layout, so
+`glue2.learner.evaluate` works unchanged.
+
+Build a bundle from existing runs and score it:
+
+```bash
+cd $SCRATCH/GLUE && export PYTHONPATH=$PWD/glue2:$PWD/external/solstice/src
+python -m glue2.solstice_learner --snapshot $SCRATCH/eirene_nn/glue2_work/diiid_eirene_v3/snapshots/43f5b89db3f5c301 \
+  --mesh-store $SCRATCH/eirene_nn/stores/diiid_appfpp_eirene_v3_mesh.nc --out-root $SCRATCH/eirene_nn/runs/bundles \
+  $SCRATCH/eirene_nn/runs/eirene_sources_v3_jnode_s{0,1,2,3}
+```
+
+First bundle (4 seeds): `runs/bundles/solstice_sources-67aa0a32036a`; the gate
+accepts 87 % of val and 89 % of test cases at fussiness 1.5. Error-bar scales are
+6-12 (four seeds on one split under-disperse), so more seeds or bootstrap splits
+would sharpen the error bar. Note that `evaluate()` scores the raw per-stratum
+arrays (unweighted, all strata), so its `smo` numbers look poor (signed field,
+domain sum near zero); the stratum-weighted metrics of `metrics.json` are the
+ones that matter for B2.5.
+
 ## Where this goes next (not for this hand-off)
 
 Wall-tally head (6 x 74 values per case), SOLSTICE learner registration with

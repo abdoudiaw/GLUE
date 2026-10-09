@@ -70,6 +70,8 @@ def make_learner(name: str, **params) -> Learner:
 def load_bundle(path: str | Path) -> Bundle:
     path = Path(path)
     meta = json.loads((path / "bundle.json").read_text())
+    if meta["learner"] not in BUNDLE_LOADERS:      # register the built-in learners on demand
+        from glue2 import baseline, solstice_learner  # noqa: F401
     return BUNDLE_LOADERS[meta["learner"]](path)
 
 

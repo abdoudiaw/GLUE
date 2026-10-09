@@ -22,3 +22,4 @@ stressTest_analyticICF_collective
 glue2/work/
 *.egg-info
 .pytest_cache
+logs/

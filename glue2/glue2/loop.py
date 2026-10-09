@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
-from glue2 import baseline  # noqa: F401  (registers the pca_ridge learner)
+from glue2 import baseline, solstice_learner  # noqa: F401  (register the pca_ridge and solstice_sources learners)
 from glue2.catalog import Catalog, utcnow
 from glue2.ingest import ingest
 from glue2.learner import evaluate, load_bundle, make_learner
