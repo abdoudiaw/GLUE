@@ -57,6 +57,11 @@ spec:
     - wneutrals_wldrm
     - wneutrals_wldpm
 
+train:                             # `glue2 train`: the SOLSTICE sources model on the latest snapshot
+  config: external/solstice/configs/training/eirene_sources.yaml
+  mesh_store: /Users/42d/data/eirene_nn/stores/diiid_appfpp_eirene_v3_mesh.nc
+  out_root: /Users/42d/data/eirene_nn/runs
+
 learner: pca_ridge                 # baseline; SOLSTICE registers its own learner name
 learner_params: {members: 8, degree: 2}
 retrain_min_new: 50

@@ -26,19 +26,42 @@ failures.
 
 ## Repository layout
 
+GLUE is the one checkout to work from. The simulator and the model library are
+pinned as submodules of the GLUE repository (`git submodule update --init
+external/solstice`; SOLPS-ITER is only needed for reading the source, it is
+built on the run host from its own clone):
+
 ```
+external/solstice     SOLSTICE (branch feature/eirene-sources): the GNN and its trainers
+external/SOLPS-ITER   SOLPS-ITER fork (feature/eirene-training-dump) with the B2.5 fork
+                      that writes the training events and carries the replay hook
 glue2/          the package: events, catalog, ingest, snapshot, b2view, learner, loop
 configs/        example loop configs (DIII-D EIRENE campaign: diiid_eirene_v3.*.yaml)
 tests/
 campaigns/      scripts that produce training events on the SOLPS side
   diiid_eirene/   DIII-D campaign runner (Mac/Mora controllers, per-case runner,
                   training-dump build, event validator)
+  nersc/          job script: `glue2 train` of the sources model on Perlmutter
 docs/           EIRENE training-dump contract, data-flow diagram of what B2.5
                 receives from EIRENE, coupling note, hand-off notes
 notebooks/      explorers for the event files (eirene_dump_explorer) and the
                 legacy fort.31 background record (fort31_explorer)
 legacy/         the SOLPEx 5-in/4-out socket prototype, kept for reference only
 ```
+
+## Commands
+
+```
+python -m glue2.cli --config glue2.yaml ingest      # new event files -> catalog
+python -m glue2.cli --config glue2.yaml snapshot    # frozen training set under workdir/snapshots
+python -m glue2.cli --config glue2.yaml train [--snapshot ID] [--name RUN] [--device D] [--set k=v]
+python -m glue2.cli --config glue2.yaml cycle       # the active-learning loop
+```
+
+`train` runs the SOLSTICE sources trainer (`external/solstice`, `task: sources`)
+on the latest snapshot in a subprocess, using the `train:` block of the config
+(training config, mesh store, output root). Data live outside the repository,
+e.g. `~/data/eirene_nn/{glue2_work,stores,runs}`.
 
 ## Work-directory layout
 

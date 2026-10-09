@@ -1,0 +1,8 @@
+[submodule "external/solstice"]
+	path = external/solstice
+	url = https://github.com/abdoudiaw/solstice.git
+	branch = feature/eirene-sources
+[submodule "external/SOLPS-ITER"]
+	path = external/SOLPS-ITER
+	url = https://github.com/abdoudiaw/SOLPS-ITER.git
+	branch = feature/eirene-training-dump

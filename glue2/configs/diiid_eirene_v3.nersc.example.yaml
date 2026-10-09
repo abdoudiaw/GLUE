@@ -1,0 +1,34 @@
+# GLUE v2 on NERSC (Perlmutter): train the SOLSTICE sources model on a snapshot copied
+# from the Mac. Copy ~/data/eirene_nn/{glue2_work,stores} to $SCRATCH/eirene_nn; the
+# catalog is only read here (the events themselves stay in Dropbox).
+workdir: /pscratch/sd/d/diawa/eirene_nn/glue2_work/diiid_eirene_v3
+ingest_roots: []
+settle_seconds: 0
+exclude: ["_*", ".*"]
+skip_dataless: true
+max_new_cases: null
+
+spec:
+  event_kinds: [single_call]
+  used_only: true
+  val_fraction: 0.15
+  test_fraction: 0.15
+  dtype: float32
+  inputs: [braeir_dni, braeir_vv, braeir_uu, braeir_ww, braeir_up, braeir_fnix, braeir_fniy, braeir_zi,
+           braeir_te, braeir_ti, braeir_pr, braeir_rr, braeir_feix, braeir_feiy, braeir_feex, braeir_feey,
+           braeir_vol, braeir_bfield, braeir_bpol, braeir_btor, braeir_delta_sheathx, braeir_delta_sheathy,
+           braeir_aiso, braeir_po, b2_tflux, b2_flux_scale]
+  targets: [eirbra_sni, eirbra_smo, eirbra_see, eirbra_sei,
+            wneutrals_wldna, wneutrals_wldra, wneutrals_wldpa, wneutrals_wldnm, wneutrals_wldrm, wneutrals_wldpm]
+
+train:
+  config: external/solstice/configs/training/eirene_sources.yaml
+  mesh_store: /pscratch/sd/d/diawa/eirene_nn/stores/diiid_appfpp_eirene_v3_mesh.nc
+  out_root: /pscratch/sd/d/diawa/eirene_nn/runs
+
+learner: pca_ridge
+learner_params: {members: 8, degree: 2}
+retrain_min_new: 50
+batch_size: 8
+max_open_requests: 32
+promote_tolerance: 0.05
