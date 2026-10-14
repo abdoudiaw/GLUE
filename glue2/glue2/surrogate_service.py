@@ -1,0 +1,136 @@
+"""EIRENE surrogate service for B2.5's surrogate mode (eirene_training_replay = 3).
+
+B2.5 writes, before each EIRENE call, the plasma background as the event file
+`eirene_surrogate_request.nc` in its run directory (b2mn.exe.dir) and waits.
+This service watches that directory, scores the background with a GLUE2
+bundle and either
+
+* writes `eirene_surrogate_answer.nc` (the request with the predicted
+  per-stratum sources, and the wall tallies when the bundle has them, in the
+  event layout: B2.5 applies it like a reduced replay and skips EIRENE), or
+* creates the empty marker `eirene_surrogate_fallback` (B2.5 calls EIRENE; with
+  the dump on, that call becomes a training event in the same directory).
+
+The gate is the bundle's `ok` (errbar/rmse score and novelty), optionally
+forced: `--always` answers every request (pure surrogate run), `--never` only
+logs (shadow mode, EIRENE runs every step). Decisions go to a JSONL log.
+Answers are written to a temporary name and renamed, so B2.5 never reads a
+partial file. Variables the bundle does not predict keep the request's values,
+i.e. the previous EIRENE call's (today: the wall tallies, until the tally head
+is trained).
+
+    python -m glue2.surrogate_service --bundle <dir> --run-dir <b2mn.exe.dir> [--device cpu]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import sys
+import time
+from pathlib import Path
+
+import netCDF4
+import numpy as np
+
+from glue2.events import read_arrays
+from glue2.learner import load_bundle
+
+REQUEST = "eirene_surrogate_request.nc"
+ANSWER = "eirene_surrogate_answer.nc"
+FALLBACK = "eirene_surrogate_fallback"
+
+
+def write_answer(bundle, request: Path, answer: Path, pred) -> dict:
+    """Request file + prediction -> answer file (temporary name, then renamed)."""
+    tmp = answer.with_suffix(".nc.tmp")
+    shutil.copyfile(request, tmp)
+    summary = {}
+    with netCDF4.Dataset(tmp, "a") as ds:
+        for name in bundle.meta["targets"]:
+            var = ds.variables[name]
+            var.set_auto_mask(False)
+            new = np.asarray(pred.mean[name][0], dtype=np.float64)
+            if new.shape != var.shape:
+                raise ValueError(f"{name}: bundle shape {new.shape} vs request {var.shape}")
+            var[...] = new
+            summary[name] = float(np.abs(new).sum())
+        ds.setncattr("glue2_surrogate", json.dumps({"bundle_id": bundle.bundle_id, "score": float(pred.score[0]),
+                                                    "novelty": float(pred.novelty[0])}))
+    os.replace(tmp, answer)
+    return summary
+
+
+def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_path: str | None,
+          poll: float = 0.05, once: bool = False, reload_file: str | None = None) -> int:
+    run = Path(run_dir)
+    bundle = load_bundle(bundle_dir)
+    if device and hasattr(bundle, "device"):
+        bundle.device = device
+    log = open(log_path or run / "eirene_surrogate_service.jsonl", "a")
+    print(f"surrogate service: bundle {bundle.bundle_id}, watching {run}, policy {policy}", flush=True)
+    req, ans, fb = run / REQUEST, run / ANSWER, run / FALLBACK
+    n = 0
+    while True:
+        if reload_file and Path(reload_file).exists():          # hot swap of the bundle (online retrain)
+            new_dir = Path(reload_file).read_text().strip()
+            if new_dir and new_dir != str(bundle.path):
+                try:
+                    bundle = load_bundle(new_dir)
+                    if device and hasattr(bundle, "device"):
+                        bundle.device = device
+                    print(f"surrogate service: switched to bundle {bundle.bundle_id}", flush=True)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"surrogate service: cannot load {new_dir}: {exc}", flush=True)
+            Path(reload_file).unlink()
+        if not req.exists():
+            time.sleep(poll)
+            continue
+        t0 = time.time()
+        try:
+            with netCDF4.Dataset(req) as ds:
+                call = int(ds.getncattr("b2_call_index"))
+            inputs = {k: v[None] for k, v in read_arrays(req, bundle.meta["inputs"]).items()}
+            pred = bundle.predict(inputs)
+            use = bool(pred.ok[0]) if policy == "gate" else policy == "always"
+            rec = {"call": call, "score": float(pred.score[0]), "novelty": float(pred.novelty[0]),
+                   "ok": bool(pred.ok[0]), "surrogate": use, "bundle": bundle.bundle_id}
+            if use:
+                rec["sums"] = write_answer(bundle, req, ans, pred)
+            else:
+                fb.touch()
+            req.unlink(missing_ok=True)
+        except Exception as exc:  # noqa: BLE001
+            rec = {"error": repr(exc), "surrogate": False}
+            fb.touch()
+            req.unlink(missing_ok=True)
+        rec["seconds"] = round(time.time() - t0, 3)
+        rec["utc"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        log.write(json.dumps(rec) + "\n")
+        log.flush()
+        print(json.dumps({k: v for k, v in rec.items() if k != "sums"}), flush=True)
+        n += 1
+        if once:
+            return 0
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--bundle", required=True)
+    ap.add_argument("--run-dir", required=True, help="directory B2.5 runs in (b2mn.exe.dir)")
+    ap.add_argument("--device", default=None)
+    ap.add_argument("--always", action="store_true", help="answer every request (pure surrogate)")
+    ap.add_argument("--never", action="store_true", help="shadow mode: score only, always fall back")
+    ap.add_argument("--log", default=None)
+    ap.add_argument("--once", action="store_true", help="serve one request and exit (tests)")
+    ap.add_argument("--reload-file", default=None,
+                    help="path of a file whose content names a new bundle directory to switch to")
+    a = ap.parse_args(argv)
+    policy = "always" if a.always else "never" if a.never else "gate"
+    return serve(a.bundle, a.run_dir, a.device, policy, a.log, once=a.once, reload_file=a.reload_file)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
