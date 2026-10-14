@@ -151,6 +151,16 @@ four. Runs: `$SCRATCH/eirene_nn/runs/eirene_sources_v3_jnode_s{0..3}`, summary
 59601657/59/60/61 (seeds 1-4) queued for the weekend under
 `runs/eirene_sources_v3{,_s1..4}`.
 
+Update 2026-10-14: the five batch jobs completed the same evening (30 min each),
+so nine seeds exist; `runs/SUMMARY.md` (and `runs/summarize.sh`) now cover all
+nine. Test, weighted fields, rel L2 median over the nine: sni 10.5-12.7 %,
+see 10.5-11.8 %, smo 23-28 %, sei 33-36 %; best validation epoch 93-126 for every
+seed. Nine-seed bundle: `runs/bundles/solstice_sources-cfc800459d3a` (gate accepts
+84 % of val and 89 % of test at fussiness 1.5; error-bar scales 5.2-11, so nine
+seeds on one split are still under-dispersed and bootstrap splits remain the next
+lever for the error bar). Decided: grow the training set, in particular with
+early-transient-phase EIRENE calls, only after the B2.5 coupling works.
+
 ### GLUE2 learner: `solstice_sources` (`glue2/glue2/solstice_learner.py`)
 
 The SOLSTICE seed ensemble behind the Learner/Bundle protocol (mean, errbar,
