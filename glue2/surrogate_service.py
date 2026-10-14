@@ -17,9 +17,11 @@ logs (shadow mode, EIRENE runs every step). `--gate-kinds sni,smo,see,sei`
 restricts the score to those kinds (e.g. while the tally error bars are not
 calibrated for a regime), `--skip-targets 'wneutrals_*'` leaves those
 variables of the answer at the request's values (the previous EIRENE call's),
-and `--keep-requests DIR` keeps a copy of every request, i.e. the plasma
-background B2.5 sent at each call, for trajectory comparisons. Decisions go
-to a JSONL log.
+`--keep-requests DIR` keeps a copy of every request, i.e. the plasma
+background B2.5 sent at each call, for trajectory comparisons, and
+`--max-consecutive N` forces an EIRENE call after N consecutive surrogate
+answers (an anchor against drift: the gate judges single calls and cannot
+see accumulated error). Decisions go to a JSONL log.
 Answers are written to a temporary name and renamed, so B2.5 never reads a
 partial file. Variables the bundle does not predict keep the request's values,
 i.e. the previous EIRENE call's (today: the wall tallies, until the tally head
@@ -98,8 +100,9 @@ def write_answer(bundle, request: Path, answer: Path, pred, skip: list[str] | No
 def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_path: str | None,
           poll: float = 0.05, once: bool = False, reload_file: str | None = None,
           gate_kinds: list[str] | None = None, skip_targets: list[str] | None = None,
-          keep_requests: str | None = None) -> int:
+          keep_requests: str | None = None, max_consecutive: int = 0) -> int:
     run = Path(run_dir)
+    streak = 0
     keep = Path(keep_requests) if keep_requests else None
     if keep:
         keep.mkdir(parents=True, exist_ok=True)
@@ -133,7 +136,11 @@ def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_pa
             pred = bundle.predict(inputs)
             score, ok = gate_score(bundle, pred, gate_kinds)
             use = ok if policy == "gate" else policy == "always"
-            rec = {"call": call, "score": score, "novelty": float(pred.novelty[0]), "ok": ok,
+            anchor = bool(max_consecutive and use and streak >= max_consecutive)
+            if anchor:
+                use = False
+            streak = streak + 1 if use else 0
+            rec = {"call": call, "score": score, "novelty": float(pred.novelty[0]), "ok": ok, "anchor": anchor,
                    "score_all_kinds": float(pred.score[0]), "surrogate": use, "bundle": bundle.bundle_id,
                    "ratios": {n.split("_", 1)[1]: round(float(e[0]) / max(_rmse(bundle, n), 1e-12), 3)
                               for n, e in pred.errbar.items()}}
@@ -173,12 +180,14 @@ def main(argv=None) -> int:
     ap.add_argument("--skip-targets", default=None,
                     help="comma-separated fnmatch patterns of target variables to keep from the request")
     ap.add_argument("--keep-requests", default=None, help="directory in which every request is kept")
+    ap.add_argument("--max-consecutive", type=int, default=0,
+                    help="force an EIRENE call after this many consecutive surrogate answers (0: never)")
     a = ap.parse_args(argv)
     policy = "always" if a.always else "never" if a.never else "gate"
     return serve(a.bundle, a.run_dir, a.device, policy, a.log, once=a.once, reload_file=a.reload_file,
                  gate_kinds=a.gate_kinds.split(",") if a.gate_kinds else None,
                  skip_targets=a.skip_targets.split(",") if a.skip_targets else None,
-                 keep_requests=a.keep_requests)
+                 keep_requests=a.keep_requests, max_consecutive=a.max_consecutive)
 
 
 if __name__ == "__main__":
