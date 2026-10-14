@@ -335,22 +335,29 @@ def build_bundle(run_dirs: list[str | Path], snapshot: Snapshot, out_root: str |
         meta["calibration"]["knn_ref"] = knn_ref
         b.train_feats, b.feat_scale, b.knn_ref = Z, feat_scale, knn_ref
 
-        # error-bar scale and held-out error per source kind, in the normalized metric
-        split = "val" if len(snapshot.samples("val")) else "train"
-        data = snapshot.load(meta["inputs"] + targets, split)
-        X, W, (mean, gmean), (std, gstd), _ = b._raw({k: data[k] for k in meta["inputs"]})
+        # error-bar scale and held-out error per source kind, in the normalized metric;
+        # calibrated on the concatenation of `params["calib_splits"]` (default: val), so a
+        # transient regime held out in acq_test can enter the calibration when asked for
         from glue2.b2view import training_arrays
         from solstice.training.sources_data import stack_tallies, to_cells
-        t = training_arrays(snapshot, split, list(ck0["strata"]))
-        Y_true = to_cells(t.targets, b.members[0].perm)
-        gerr = gspread = None
-        if gmean is not None:
-            G_true, _ = stack_tallies(t.tallies, t.strata)
-            gerr, gspread = b.normalized(np.abs(gmean - G_true), True), b.normalized(gstd, True)
-        err = b.kind_stat(b.normalized(np.abs(mean - Y_true)), gerr)
-        spread = b.kind_stat(b.normalized(std), gspread)
+        want = list(params.get("calib_splits") or ["val"])
+        splits = [sp for sp in want if len(snapshot.samples(sp))] or ["train"]
+        err_parts, spread_parts = [], []
+        for split in splits:
+            data = snapshot.load(meta["inputs"] + targets, split)
+            X, W, (mean, gmean), (std, gstd), _ = b._raw({k: data[k] for k in meta["inputs"]})
+            t = training_arrays(snapshot, split, list(ck0["strata"]))
+            Y_true = to_cells(t.targets, b.members[0].perm)
+            gerr = gspread = None
+            if gmean is not None:
+                G_true, _ = stack_tallies(t.tallies, t.strata)
+                gerr, gspread = b.normalized(np.abs(gmean - G_true), True), b.normalized(gstd, True)
+            err_parts.append(b.kind_stat(b.normalized(np.abs(mean - Y_true)), gerr))
+            spread_parts.append(b.kind_stat(b.normalized(std), gspread))
+        err = {kd: np.concatenate([e[kd] for e in err_parts]) for kd in err_parts[0]}
+        spread = {kd: np.concatenate([e[kd] for e in spread_parts]) for kd in spread_parts[0]}
         meta["calibration"].update({
-            "split": split,
+            "split": "+".join(splits),
             "errbar_scale": {kd: float(err[kd].mean() / max(spread[kd].mean(), 1e-12)) for kd in err},
             "rmse": {kd: float(np.sqrt((err[kd] ** 2).mean())) or 1e-12 for kd in err},
         })
@@ -428,10 +435,13 @@ def main(argv=None) -> int:
     ap.add_argument("--novelty-max", type=float, default=1.0)
     ap.add_argument("--knn", type=int, default=5)
     ap.add_argument("--device", default=None)
+    ap.add_argument("--calib-splits", default="val",
+                    help="comma-separated snapshot splits the error bar is calibrated on (default: val)")
     a = ap.parse_args(argv)
     snap = Snapshot.open(a.snapshot)
     params = dict(members=len(a.runs), fussiness=a.fussiness, novelty_max=a.novelty_max, knn=a.knn,
-                  mesh_store=a.mesh_store, source="existing runs")
+                  mesh_store=a.mesh_store, source="existing runs",
+                  calib_splits=[sp.strip() for sp in a.calib_splits.split(",") if sp.strip()])
     path = build_bundle(a.runs, snap, a.out_root, a.mesh_store, params, a.device)
     b = load_bundle(path)
     print(f"bundle {b.bundle_id} -> {path}")
