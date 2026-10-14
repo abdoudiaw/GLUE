@@ -22,9 +22,9 @@ def test_every_spec_renders(spec, tmp_path):
 
 
 def test_couple_spec_has_its_case_and_service():
-    out = jobs.render(jobs.JOBS / "specs" / "mora_couple_gate50_transient.yaml", Path("/tmp/glue2_jobs_test"))
+    out = jobs.render(jobs.JOBS / "specs" / "mora_couple_gate10_transient.yaml", Path("/tmp/glue2_jobs_test"))
     text = out.read_text()
-    assert "b2fstate_step00050" in text and "al_tests/gate50_transient" in text
+    assert "b2fstate_step00050" in text and "al_tests/gate10_transient" in text
     assert "glue2.surrogate_service" in text and "'eirene_training_replay'      '3'" in text
     assert "-np 32" in text                                   # host default leaves headroom
 
