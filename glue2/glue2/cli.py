@@ -1,5 +1,8 @@
 """Command line: python -m glue2 {status,ingest,snapshot,train,cycle} --config glue2.yaml
 
+`python -m glue2.replay` writes B2.5 replay event files from a bundle,
+`python -m glue2.solstice_learner` builds a bundle from trained seed runs.
+
 `status` opens the catalog read-only and can run while the loop is active.
 `train` runs the model library's trainer on a snapshot (the latest by
 default) in a subprocess, so GLUE itself never imports torch; it reads the

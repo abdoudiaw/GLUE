@@ -9,7 +9,9 @@ the GLUE2 Learner/Bundle protocol (mean, errbar, score, novelty, ok).
   the mesh store, per-channel transforms, standardized log stratum strengths),
   decodes every member to native units and returns their mean in the event
   file's layout (guard cells and inactive strata zero), so `glue2.learner.evaluate`
-  compares it with the snapshot targets directly.
+  compares it with the snapshot targets directly. Members trained with the
+  wall-tally head also return the six per-stratum wall tallies (slot 0 of the
+  event array is the sum over strata); bundles without it predict the sources only.
 * errbar per source kind is the member spread in the trainer's normalized target
   metric, scaled on the validation split so it matches the actual error on
   average; `rmse` is the held-out error in the same metric; `score` = max over
@@ -75,6 +77,9 @@ class _Member:
         self.params = ck.get("params", "strata_weights")
         self.p_mean = None if ck.get("p_mean") is None else np.asarray(ck["p_mean"])
         self.p_std = None if ck.get("p_std") is None else np.asarray(ck["p_std"])
+        self.tally_names = list(ck.get("tally_names") or [])
+        self.g_norm = sd.CellTargetNorm.from_dict(ck["tally_norm"]) if ck.get("tally_norm") else None
+        self.n_surfaces = int(ck["n_surfaces"]) if ck.get("n_surfaces") else 0
         self.graph = MeshGraph(mesh, n_latent=int(ck["n_latent"]), k_nn=int(ck["k_nn"]), seed=int(ck.get("seed", 0)),
                                node_features=str(ck.get("node_features", "extended")),
                                k_enc=int(ck.get("k_enc", 1)), k_dec=ck.get("k_dec"),
@@ -84,9 +89,10 @@ class _Member:
         self.model.to(device).eval()
         self.device = device
 
-    def predict(self, X: np.ndarray, W: np.ndarray, batch: int = 16) -> np.ndarray:
+    def predict(self, X: np.ndarray, W: np.ndarray, batch: int = 16) -> tuple[np.ndarray, np.ndarray | None]:
         """Raw inputs (case, cell, raw channel) and strengths (case, stratum) ->
-        native-unit sources (case, cell, channel)."""
+        native-unit sources (case, cell, channel) and wall tallies (case, surface,
+        tally channel) or None for a member without the tally head."""
         from solstice.training.evaluate import predict
         from solstice.training.sources_cli import strata_params
 
@@ -95,7 +101,11 @@ class _Member:
             Xp = strata_params(W, self.p_mean, self.p_std)[0]
         else:
             Xp = np.zeros((len(X), 1), np.float32)
-        return self.out_norm.inverse(predict(self.model, self.graph, Xp, self.device, batch, Nn=Nn))
+        Yn, Gn = predict(self.model, self.graph, Xp, self.device, batch, Nn=Nn, with_global=True)
+        G = None
+        if self.g_norm is not None and Gn is not None:
+            G = self.g_norm.inverse(Gn.reshape(len(X), self.n_surfaces, -1))
+        return self.out_norm.inverse(Yn), G
 
 
 class SolsticeSourcesBundle:
@@ -117,14 +127,28 @@ class SolsticeSourcesBundle:
         self.bra_inputs, self.ny, self.nx = list(lay["bra_inputs"]), int(lay["ny_bra"]), int(lay["nx_bra"])
         self.keep = [int(k) for k in lay["keep"]]
         self.target_names, self.strata = list(self.meta["target_names"]), list(self.meta["strata"])
-        self.kinds = _kinds(self.target_names)
+        self.tally_names = list(self.meta.get("tally_names") or [])
+        self.tally_targets = list(self.meta.get("tally_targets") or [])
+        self.kinds = _kinds(self.target_names) + _kinds(self.tally_names)
+
+    @property
+    def mesh_store(self) -> str:
+        """The bundle records the mesh store it was built with; on another machine
+        GLUE2_MESH_STORE, or a file of the same name under SOLSTICE_DATA, replaces it."""
+        rec = Path(self.meta["mesh_store"])
+        for cand in (os.environ.get("GLUE2_MESH_STORE"),
+                     str(Path(os.environ["SOLSTICE_DATA"]) / rec.name) if os.environ.get("SOLSTICE_DATA") else None,
+                     str(rec)):
+            if cand and Path(cand).exists():
+                return cand
+        raise FileNotFoundError(f"mesh store {rec} not found; set GLUE2_MESH_STORE or SOLSTICE_DATA")
 
     # ---- members -------------------------------------------------------------------------
     @property
     def members(self) -> list[_Member]:
         if self._members is None:
             from solstice.training import sources_data as sd
-            mesh = sd.load_mesh_store(self.meta["mesh_store"])
+            mesh = sd.load_mesh_store(self.mesh_store)
             self._members = [_Member(self.path / m, mesh, self.device) for m in self.meta["members"]]
         return self._members
 
@@ -144,12 +168,23 @@ class SolsticeSourcesBundle:
         W = (np.asarray(inputs["b2_tflux"]) * np.asarray(inputs["b2_flux_scale"]))[:, self.keep].astype(np.float32)
         return X, W
 
-    def embed(self, Y: np.ndarray) -> dict[str, np.ndarray]:
-        """(case, cell, channel) native sources -> {eirbra_*: (case, *shape)} as in the events."""
+    def embed(self, Y: np.ndarray, G: np.ndarray | None = None) -> dict[str, np.ndarray]:
+        """(case, cell, channel) native sources (and (case, surface, tally channel)
+        tallies) -> {eirbra_* / wneutrals_wld*: (case, *shape)} as in the events."""
         n = len(Y)
         perm = self.members[0].perm
         out = {}
+        for tname in self.tally_targets if G is not None else []:
+            tally = tname.split("_", 1)[1]
+            full = np.zeros((n, *self.meta["shapes"][tname]), np.float32)
+            for j, k in enumerate(self.keep):
+                ch = self.tally_names.index(f"{tally}:{self.strata[j]}")
+                (full[:, k + 1, 0] if full.ndim == 4 else full[:, k + 1])[:] = G[:, :, ch]
+            (full[:, 0, 0] if full.ndim == 4 else full[:, 0])[:] = full[:, 1:].sum(1)[:, 0] if full.ndim == 4 else full[:, 1:].sum(1)
+            out[tname] = full
         for tname in self.meta["targets"]:
+            if tname in self.tally_targets:
+                continue
             kind = tname.split("_", 1)[1]
             shape = tuple(self.meta["shapes"][tname])
             full = np.zeros((n, *shape), np.float32)
@@ -168,24 +203,33 @@ class SolsticeSourcesBundle:
     # ---- ensemble ------------------------------------------------------------------------
     def _raw(self, inputs: dict[str, np.ndarray]):
         X, W = self.arrays(inputs)
-        preds = np.stack([m.predict(X, W) for m in self.members])           # (member, case, cell, ch)
+        outs = [m.predict(X, W) for m in self.members]
+        preds = np.stack([y for y, _ in outs])                              # (member, case, cell, ch)
         mean, std = preds.mean(0), preds.std(0)
+        gmean = gstd = None
+        if self.tally_targets and all(g is not None for _, g in outs):
+            gp = np.stack([g for _, g in outs])                             # (member, case, surface, ch)
+            gmean, gstd = gp.mean(0), gp.std(0)
         feats = self.features(X, W)
-        return X, W, mean, std, feats
+        return X, W, (mean, gmean), (std, gstd), feats
 
-    def normalized(self, arr: np.ndarray) -> np.ndarray:
-        """Native (case, cell, channel) -> the trainer's standardized metric (masked)."""
-        n0 = self.members[0].out_norm
+    def normalized(self, arr: np.ndarray, tallies: bool = False) -> np.ndarray:
+        """Native (case, cell, channel) -> the trainer's standardized metric (masked);
+        tallies=True for (case, surface, tally channel)."""
+        n0 = self.members[0].g_norm if tallies else self.members[0].out_norm
         return (arr / n0.std) * n0.mask
 
-    def kind_stat(self, arr_n: np.ndarray) -> dict[str, np.ndarray]:
-        """Mean over the masked entries of each source kind -> {kind: (case,)}."""
-        n0 = self.members[0].out_norm
+    def kind_stat(self, arr_n: np.ndarray, garr_n: np.ndarray | None = None) -> dict[str, np.ndarray]:
+        """Mean over the masked entries of each source kind (and tally) -> {kind: (case,)}."""
         out = {}
-        for kind in self.kinds:
-            ch = [j for j, t in enumerate(self.target_names) if t.startswith(kind + ":")]
-            m = n0.mask[:, ch]
-            out[kind] = (arr_n[:, :, ch] * m).sum((1, 2)) / max(m.sum(), 1.0)
+        for names, norm, arr in ((self.target_names, self.members[0].out_norm, arr_n),
+                                 (self.tally_names, self.members[0].g_norm, garr_n)):
+            if arr is None or norm is None:
+                continue
+            for kind in _kinds(names):
+                ch = [j for j, t in enumerate(names) if t.startswith(kind + ":")]
+                m = norm.mask[:, ch]
+                out[kind] = (arr[:, :, ch] * m).sum((1, 2)) / max(m.sum(), 1.0)
         return out
 
     def features(self, X: np.ndarray, W: np.ndarray) -> np.ndarray:
@@ -206,18 +250,19 @@ class SolsticeSourcesBundle:
         return np.sort(d, axis=1)[:, :k].mean(1) / self.knn_ref
 
     def predict(self, inputs: dict[str, np.ndarray]) -> Prediction:
-        _, _, mean, std, feats = self._raw(inputs)
-        spread = self.kind_stat(self.normalized(std))
+        _, _, (mean, gmean), (std, gstd), feats = self._raw(inputs)
+        spread = self.kind_stat(self.normalized(std), None if gstd is None else self.normalized(gstd, True))
         n = len(mean)
-        errbar, ratio = {}, np.zeros((n, len(self.kinds)))
-        for j, kind in enumerate(self.kinds):
+        kinds = [k for k in self.kinds if k in spread and k in self.errbar_scale]
+        errbar, ratio = {}, np.zeros((n, len(kinds)))
+        for j, kind in enumerate(kinds):
             eb = self.errbar_scale[kind] * spread[kind]
-            errbar[f"eirbra_{kind}"] = eb
+            errbar[("wneutrals_" if kind.startswith("wld") else "eirbra_") + kind] = eb
             ratio[:, j] = eb / max(self.rmse[kind], 1e-12)
         novelty = self.novelty(feats)
         score = ratio.max(1)
         ok = (score <= self.fussiness) & (novelty <= self.novelty_max)
-        return Prediction(self.embed(mean), errbar, score, novelty, ok)
+        return Prediction(self.embed(mean, gmean), errbar, score, novelty, ok)
 
 
 def _default_device() -> str:
@@ -245,10 +290,13 @@ def build_bundle(run_dirs: list[str | Path], snapshot: Snapshot, out_root: str |
     labels = _stratum_labels(snapshot, shapes["b2_tflux"][0])
     keep = [labels.index(s) for s in ck0["strata"]]
     targets = [t for t in SOURCES if t in spec.targets]
+    tally_names = list(ck0.get("tally_names") or [])
+    tally_targets = [t for t in spec.targets if t.startswith("wneutrals_wld")] if tally_names else []
     meta = {
         "learner": NAME, "snapshot_id": snapshot.snapshot_id,
-        "inputs": list(spec.inputs), "targets": targets,
-        "shapes": {k: list(v) for k, v in shapes.items() if k in targets},
+        "inputs": list(spec.inputs), "targets": targets + tally_targets,
+        "tally_targets": tally_targets, "tally_names": tally_names,
+        "shapes": {k: list(v) for k, v in shapes.items() if k in targets + tally_targets},
         "layout": {"bra_inputs": bra, "ny_bra": int(ny_bra), "nx_bra": int(nx_bra), "keep": keep},
         "target_names": list(ck0["target_names"]), "strata": list(ck0["strata"]),
         "mesh_store": str(Path(mesh_store).resolve()), "device": device,
@@ -290,17 +338,21 @@ def build_bundle(run_dirs: list[str | Path], snapshot: Snapshot, out_root: str |
         # error-bar scale and held-out error per source kind, in the normalized metric
         split = "val" if len(snapshot.samples("val")) else "train"
         data = snapshot.load(meta["inputs"] + targets, split)
-        X, W, mean, std, _ = b._raw({k: data[k] for k in meta["inputs"]})
+        X, W, (mean, gmean), (std, gstd), _ = b._raw({k: data[k] for k in meta["inputs"]})
         from glue2.b2view import training_arrays
-        from solstice.training.sources_data import to_cells
+        from solstice.training.sources_data import stack_tallies, to_cells
         t = training_arrays(snapshot, split, list(ck0["strata"]))
         Y_true = to_cells(t.targets, b.members[0].perm)
-        err = b.kind_stat(b.normalized(np.abs(mean - Y_true)))
-        spread = b.kind_stat(b.normalized(std))
+        gerr = gspread = None
+        if gmean is not None:
+            G_true, _ = stack_tallies(t.tallies, t.strata)
+            gerr, gspread = b.normalized(np.abs(gmean - G_true), True), b.normalized(gstd, True)
+        err = b.kind_stat(b.normalized(np.abs(mean - Y_true)), gerr)
+        spread = b.kind_stat(b.normalized(std), gspread)
         meta["calibration"].update({
             "split": split,
-            "errbar_scale": {kd: float(err[kd].mean() / max(spread[kd].mean(), 1e-12)) for kd in b.kinds},
-            "rmse": {kd: float(np.sqrt((err[kd] ** 2).mean())) or 1e-12 for kd in b.kinds},
+            "errbar_scale": {kd: float(err[kd].mean() / max(spread[kd].mean(), 1e-12)) for kd in err},
+            "rmse": {kd: float(np.sqrt((err[kd] ** 2).mean())) or 1e-12 for kd in err},
         })
         h.update(json.dumps(meta, sort_keys=True, default=str).encode())
         meta["bundle_id"] = f"{NAME}-" + h.hexdigest()[:12]

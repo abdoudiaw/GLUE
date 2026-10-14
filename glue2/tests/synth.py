@@ -13,7 +13,7 @@ from pathlib import Path
 import netCDF4
 import numpy as np
 
-NX, NY, NSTRAT, NACTIVE = 6, 4, 3, 2
+NX, NY, NSTRAT, NACTIVE, NSURF = 6, 4, 3, 2, 5
 EV = 1.602176634e-19
 
 
@@ -50,8 +50,15 @@ def response(bg: dict, rng: np.random.Generator, noise: float) -> dict[str, np.n
     sei = 0.3 * see
     smo = np.stack([sni[:, 0] * 1e-22 * bg["braeir_uu"][0], -0.2 * sni[:, 0] * 1e-22, 0 * sni[:, 0]], axis=1)
     dab2 = 1e40 * np.abs(sni[:, 0]).sum(0) / np.maximum(rate, 1e-300) * 1e-21
+    # per-stratum wall tallies: slot 0 is the sum over strata, slots 1..NACTIVE the
+    # strata, the rest unused (as wldna(nlimps, natm, 0:nstra+1) in EIRENE)
+    wldna = np.zeros((NSTRAT + 1, 1, NSURF))
+    surf = np.linspace(0.2, 1.0, NSURF)
+    for s, flux in enumerate(bg["b2_tflux"]):
+        wldna[s + 1, 0] = flux * surf * (1 + 0.3 * tev.mean() / 10) * (1 + rng.normal(0, noise, NSURF))
+    wldna[0] = wldna[1:].sum(0)
     return {"eirbra_sni": sni, "eirbra_see": see, "eirbra_sei": sei, "eirbra_smo": smo,
-            "wneutrals_dab2": dab2[None, None]}
+            "wneutrals_dab2": dab2[None, None], "wneutrals_wldna": wldna}
 
 
 DIMS = {
@@ -63,10 +70,12 @@ DIMS = {
     "eirbra_see": ("stratum_slot", "eir_y", "eir_x"), "eirbra_sei": ("stratum_slot", "eir_y", "eir_x"),
     "eirbra_smo": ("stratum_slot", "momentum_slot", "eir_y", "eir_x"),
     "wneutrals_dab2": ("wneutral_state_slot", "wneutral_atom_species", "wneutral_y", "wneutral_x"),
+    "wneutrals_wldna": ("wld_stratum_slot", "wld_atom_species", "wld_surface"),
 }
 SIZES = {"bra_fluid_species": 1, "bra_y": NY, "bra_x": NX, "active_stratum": NACTIVE,
          "stratum_slot": NSTRAT, "fluid_species": 1, "eir_y": NY, "eir_x": NX, "momentum_slot": 3,
-         "wneutral_state_slot": 1, "wneutral_atom_species": 1, "wneutral_y": NY, "wneutral_x": NX}
+         "wneutral_state_slot": 1, "wneutral_atom_species": 1, "wneutral_y": NY, "wneutral_x": NX,
+         "wld_stratum_slot": NSTRAT + 1, "wld_atom_species": 1, "wld_surface": NSURF}
 
 
 def write_event(path: Path, arrays: dict, *, call: int, kind: str, rep: int, reps: int,
@@ -122,7 +131,7 @@ def write_case(root: Path, index: int, *, repeats: int = 2, calls: int = 1, nois
 
 
 INPUTS = ("braeir_dni", "braeir_te", "braeir_ti", "braeir_uu", "b2_tflux", "b2_flux_scale")
-TARGETS = ("eirbra_sni", "eirbra_see", "eirbra_sei", "eirbra_smo", "wneutrals_dab2")
+TARGETS = ("eirbra_sni", "eirbra_see", "eirbra_sei", "eirbra_smo", "wneutrals_dab2", "wneutrals_wldna")
 
 
 def mark_campaign_case(case_dir: Path, index: int, success: bool = True) -> None:

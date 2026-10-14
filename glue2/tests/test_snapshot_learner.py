@@ -68,8 +68,8 @@ def test_baseline_learns_and_gates(trained):
     metrics = evaluate(bundle, snap, "test")
     assert metrics["n"] > 0
     assert metrics["rel_l2"] < 0.1, metrics
-    data = snap.load(list(snap.spec.targets), "test")
-    mean_pred = {k: np.broadcast_to(snap.load([k], "train")[k].mean(0), data[k].shape) for k in data}
+    data = {k: v.astype(np.float64) for k, v in snap.load(list(snap.spec.targets), "test").items()}
+    mean_pred = {k: np.broadcast_to(snap.load([k], "train")[k].astype(np.float64).mean(0), data[k].shape) for k in data}
     mean_err = np.median([np.linalg.norm(mean_pred[k] - data[k]) / np.linalg.norm(data[k]) for k in data])
     assert metrics["rel_l2"] < 0.5 * mean_err                     # real skill over the mean predictor
     assert metrics["gate_rate"] > 0.5
@@ -105,7 +105,7 @@ def test_schema3_events_and_used_only_snapshot(catalog, spec, tmp_path):
 
 
 def test_training_arrays_trim_to_what_b2_uses(catalog, tmp_path):
-    from glue2.b2view import training_arrays
+    from glue2.b2view import EventLayout, training_arrays
     from glue2.snapshot import SnapshotSpec
     from synth import NX, NY
 
@@ -126,3 +126,30 @@ def test_training_arrays_trim_to_what_b2_uses(catalog, tmp_path):
     np.testing.assert_array_equal(arrays.inputs[:, 0], raw["braeir_dni"][:, 0, 1:-1, 1:NX - 1])
     total = arrays.source_sum("sni")
     assert total.shape == (4, NY - 2, NX - 2)
+    assert arrays.tallies == {}                                 # no wall tally in this spec
+
+    # with the wall tallies: per-stratum slots, and unpack() rebuilds the event arrays
+    from glue2.b2view import event_layout
+    spec = replace(spec, targets=spec.targets + ("wneutrals_wldna",))
+    snap = build_snapshot(catalog, spec, tmp_path / "snaps")
+    arrays = training_arrays(snap)
+    raw = snap.load(["wneutrals_wldna"])["wneutrals_wldna"]
+    assert arrays.tallies["wldna"].shape == (4, n_active, raw.shape[-1])
+    np.testing.assert_array_equal(arrays.tallies["wldna"], raw[:, 1:1 + n_active, 0])
+    layout = event_layout(snap)
+    back = layout.unpack(arrays.targets, arrays.tallies, dtype=np.float32)
+    data = snap.load(list(spec.targets))
+    for name in ("eirbra_sni", "eirbra_see", "eirbra_sei"):
+        np.testing.assert_array_equal(back[name][:, :n_active, ..., 1:-1, 1:NX - 1],
+                                      data[name][:, :n_active, ..., 1:-1, 1:NX - 1])
+    np.testing.assert_array_equal(back["eirbra_smo"][:, :n_active, 0, 1:-1, 1:NX - 1],
+                                  data["eirbra_smo"][:, :n_active, 0, 1:-1, 1:NX - 1])
+    assert not back["eirbra_smo"][:, :, 1:].any()                # momentum slots not learned
+    assert not back["eirbra_sni"][:, n_active:].any()           # unused stratum slots
+    np.testing.assert_allclose(back["wneutrals_wldna"], raw, rtol=1e-6)
+    again = EventLayout.from_dict(layout.as_dict())
+    np.testing.assert_array_equal(again.pack_targets(data), arrays.targets)
+    three = training_arrays(snap, momentum_slots=(0, 1, 2))
+    assert three.target_names[2 * n_active:4 * n_active] == \
+        [f"smr:{s}" for s in three.strata] + [f"smd:{s}" for s in three.strata]
+    np.testing.assert_array_equal(three.targets[:, 3 * n_active], data["eirbra_smo"][:, 0, 2, 1:-1, 1:NX - 1])
