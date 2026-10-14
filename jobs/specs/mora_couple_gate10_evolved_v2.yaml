@@ -1,0 +1,14 @@
+# 10 gated steps from the evolved replay-bed state with the fine-tuned 13-member bundle (tally head):
+# gate scored on the four source kinds, wall tallies kept from the previous EIRENE call (the tally
+# error bars are calibrated on converged cases only and the head has not learned the transient yet).
+name: gate10_evolved_v2
+stage: couple
+host: mora
+params:
+  init_state: /home/cloud/solps-runs/diii-d/acceleration_tests/replay_test/b2fstati
+  nsteps: 10
+  replay: 3
+  dump: 1
+  policy: gate
+  bundle: /home/cloud/eirene_nn/bundles/solstice_sources-831f5309e355
+  service_args: "--gate-kinds sni,smo,see,sei --skip-targets 'wneutrals_*'"

@@ -29,7 +29,7 @@ svc=""
 if [ "${replay}" = "3" ] && [ "${policy}" != "none" ]; then
   export PYTHONPATH=${glue_root}:${glue_root}/external/solstice/src SOLSTICE_DATA=${data_root}/stores OMP_NUM_THREADS=${omp_threads}
   pol=""; [ "${policy}" = "always" ] && pol=--always; [ "${policy}" = "never" ] && pol=--never
-  ${python} -m glue2.surrogate_service --bundle ${bundle} --run-dir $D/b2mn.exe.dir --device cpu $pol --log $D/service.jsonl --reload-file $D/reload_bundle > $D/service.out 2>&1 &
+  ${python} -m glue2.surrogate_service --bundle ${bundle} --run-dir $D/b2mn.exe.dir --device cpu $pol --log $D/service.jsonl --reload-file $D/reload_bundle --keep-requests $D/requests ${service_args} > $D/service.out 2>&1 &
   svc=$!; sleep ${service_warmup}
 fi
 echo "RUN START $(date)"

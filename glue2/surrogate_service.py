@@ -13,7 +13,13 @@ bundle and either
 
 The gate is the bundle's `ok` (errbar/rmse score and novelty), optionally
 forced: `--always` answers every request (pure surrogate run), `--never` only
-logs (shadow mode, EIRENE runs every step). Decisions go to a JSONL log.
+logs (shadow mode, EIRENE runs every step). `--gate-kinds sni,smo,see,sei`
+restricts the score to those kinds (e.g. while the tally error bars are not
+calibrated for a regime), `--skip-targets 'wneutrals_*'` leaves those
+variables of the answer at the request's values (the previous EIRENE call's),
+and `--keep-requests DIR` keeps a copy of every request, i.e. the plasma
+background B2.5 sent at each call, for trajectory comparisons. Decisions go
+to a JSONL log.
 Answers are written to a temporary name and renamed, so B2.5 never reads a
 partial file. Variables the bundle does not predict keep the request's values,
 i.e. the previous EIRENE call's (today: the wall tallies, until the tally head
@@ -43,13 +49,33 @@ ANSWER = "eirene_surrogate_answer.nc"
 FALLBACK = "eirene_surrogate_fallback"
 
 
-def write_answer(bundle, request: Path, answer: Path, pred) -> dict:
-    """Request file + prediction -> answer file (temporary name, then renamed)."""
+def gate_score(bundle, pred, kinds: list[str] | None):
+    """(score, ok) of the bundle, or restricted to the given kinds (errbar/rmse max over them)."""
+    if not kinds:
+        return float(pred.score[0]), bool(pred.ok[0])
+    ratios = []
+    for name, eb in pred.errbar.items():
+        kind = name.split("_", 1)[1]
+        if kind in kinds:
+            ratios.append(float(eb[0]) / max(bundle.rmse[kind], 1e-12))
+    if not ratios:
+        raise ValueError(f"gate kinds {kinds} match none of {sorted(pred.errbar)}")
+    score = max(ratios)
+    return score, score <= bundle.fussiness and float(pred.novelty[0]) <= bundle.novelty_max
+
+
+def write_answer(bundle, request: Path, answer: Path, pred, skip: list[str] | None = None) -> dict:
+    """Request file + prediction -> answer file (temporary name, then renamed).
+    Variables matching a `skip` pattern keep the request's values."""
+    import fnmatch
     tmp = answer.with_suffix(".nc.tmp")
     shutil.copyfile(request, tmp)
     summary = {}
     with netCDF4.Dataset(tmp, "a") as ds:
         for name in bundle.meta["targets"]:
+            if any(fnmatch.fnmatch(name, pat) for pat in (skip or [])):
+                summary[name] = "kept from request"
+                continue
             var = ds.variables[name]
             var.set_auto_mask(False)
             new = np.asarray(pred.mean[name][0], dtype=np.float64)
@@ -64,8 +90,13 @@ def write_answer(bundle, request: Path, answer: Path, pred) -> dict:
 
 
 def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_path: str | None,
-          poll: float = 0.05, once: bool = False, reload_file: str | None = None) -> int:
+          poll: float = 0.05, once: bool = False, reload_file: str | None = None,
+          gate_kinds: list[str] | None = None, skip_targets: list[str] | None = None,
+          keep_requests: str | None = None) -> int:
     run = Path(run_dir)
+    keep = Path(keep_requests) if keep_requests else None
+    if keep:
+        keep.mkdir(parents=True, exist_ok=True)
     bundle = load_bundle(bundle_dir)
     if device and hasattr(bundle, "device"):
         bundle.device = device
@@ -94,11 +125,16 @@ def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_pa
                 call = int(ds.getncattr("b2_call_index"))
             inputs = {k: v[None] for k, v in read_arrays(req, bundle.meta["inputs"]).items()}
             pred = bundle.predict(inputs)
-            use = bool(pred.ok[0]) if policy == "gate" else policy == "always"
-            rec = {"call": call, "score": float(pred.score[0]), "novelty": float(pred.novelty[0]),
-                   "ok": bool(pred.ok[0]), "surrogate": use, "bundle": bundle.bundle_id}
+            score, ok = gate_score(bundle, pred, gate_kinds)
+            use = ok if policy == "gate" else policy == "always"
+            rec = {"call": call, "score": score, "novelty": float(pred.novelty[0]), "ok": ok,
+                   "score_all_kinds": float(pred.score[0]), "surrogate": use, "bundle": bundle.bundle_id,
+                   "ratios": {n.split("_", 1)[1]: round(float(e[0]) / max(bundle.rmse[n.split("_", 1)[1]], 1e-12), 3)
+                              for n, e in pred.errbar.items()}}
+            if keep:
+                shutil.copyfile(req, keep / f"request_call{call:06d}.nc")
             if use:
-                rec["sums"] = write_answer(bundle, req, ans, pred)
+                rec["sums"] = write_answer(bundle, req, ans, pred, skip_targets)
             else:
                 fb.touch()
             req.unlink(missing_ok=True)
@@ -110,7 +146,7 @@ def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_pa
         rec["utc"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         log.write(json.dumps(rec) + "\n")
         log.flush()
-        print(json.dumps({k: v for k, v in rec.items() if k != "sums"}), flush=True)
+        print(json.dumps({k: v for k, v in rec.items() if k not in ("sums", "ratios")}), flush=True)
         n += 1
         if once:
             return 0
@@ -127,9 +163,16 @@ def main(argv=None) -> int:
     ap.add_argument("--once", action="store_true", help="serve one request and exit (tests)")
     ap.add_argument("--reload-file", default=None,
                     help="path of a file whose content names a new bundle directory to switch to")
+    ap.add_argument("--gate-kinds", default=None, help="comma-separated kinds the gate scores (default: all)")
+    ap.add_argument("--skip-targets", default=None,
+                    help="comma-separated fnmatch patterns of target variables to keep from the request")
+    ap.add_argument("--keep-requests", default=None, help="directory in which every request is kept")
     a = ap.parse_args(argv)
     policy = "always" if a.always else "never" if a.never else "gate"
-    return serve(a.bundle, a.run_dir, a.device, policy, a.log, once=a.once, reload_file=a.reload_file)
+    return serve(a.bundle, a.run_dir, a.device, policy, a.log, once=a.once, reload_file=a.reload_file,
+                 gate_kinds=a.gate_kinds.split(",") if a.gate_kinds else None,
+                 skip_targets=a.skip_targets.split(",") if a.skip_targets else None,
+                 keep_requests=a.keep_requests)
 
 
 if __name__ == "__main__":
