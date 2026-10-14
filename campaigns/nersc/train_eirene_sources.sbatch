@@ -3,7 +3,7 @@
 # latest GLUE2 snapshot, from the GLUE checkout: `glue2 train` runs the trainer in
 # external/solstice. One A100 in the shared queue; resumes from last.pt if resubmitted.
 #
-# Set-up once:  git clone --recurse-submodules -b glue2-solps-eirene <GLUE> $SCRATCH/GLUE
+# Set-up once:  git clone --recurse-submodules -b main <GLUE> $SCRATCH/GLUE
 #               copy ~/data/eirene_nn/{glue2_work,stores} from the Mac to $SCRATCH/eirene_nn
 #               edit configs/diiid_eirene_v3.nersc.example.yaml paths if they differ
 #   sbatch campaigns/nersc/train_eirene_sources.sbatch

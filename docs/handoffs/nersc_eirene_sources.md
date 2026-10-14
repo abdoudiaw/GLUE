@@ -35,7 +35,7 @@ and a closed-loop coupling demo.
 ## Layout on NERSC
 
 ```
-$SCRATCH/GLUE/                      git clone, branch glue2-solps-eirene (abdoudiaw/GLUE, private)
+$SCRATCH/GLUE/                      git clone, branch main (abdoudiaw/GLUE, private)
   glue2/                      the glue2 package (ingest, snapshot, b2view, cli ...)
   configs/diiid_eirene_v3.nersc.example.yaml   the config used here
   campaigns/nersc/train_eirene_sources.sbatch  the job script
@@ -134,7 +134,7 @@ curve (`log.jsonl`), wall time per epoch, and anything that failed.
   with `glue2 ingest` / `glue2 snapshot` from the Dropbox archive of event files.
 - Code changes for the sources task go on `external/solstice` branch
   `feature/eirene-sources` (then bump the submodule pointer in GLUE) or on GLUE's
-  `glue2-solps-eirene`. Keep the state task (`task: state`, `training/data.py`,
+  `main`. Keep the state task (`task: state`, `training/data.py`,
   `cli.py` state path) unchanged; its tests must keep passing
   (`PYTHONPATH=src python -m pytest -q tests` in `external/solstice`; the 7
   `test_bundle` failures are a missing `safetensors` in some environments, not a
