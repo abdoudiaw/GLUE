@@ -1,8 +1,0 @@
-numpy
-scipy
-matplotlib
-sklearn
-Pillow
-torch
-torchaudio
-torchvision

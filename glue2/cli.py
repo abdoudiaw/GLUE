@@ -49,7 +49,7 @@ def make_pool_and_teacher(raw: dict):
     raise ValueError(f"unknown teacher kind {teacher_cfg['kind']!r}")
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]      # the GLUE checkout: glue2/glue2/cli.py
+REPO_ROOT = Path(__file__).resolve().parents[1]      # the GLUE checkout: glue2/cli.py
 
 
 def latest_snapshot(cfg: LoopConfig) -> Path:

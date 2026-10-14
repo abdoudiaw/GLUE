@@ -43,7 +43,7 @@ from glue2.snapshot import Snapshot
 
 NAME = "solstice_sources"
 SOURCES = ("eirbra_sni", "eirbra_smo", "eirbra_see", "eirbra_sei")
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _kinds(target_names: list[str]) -> list[str]:

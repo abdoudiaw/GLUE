@@ -36,9 +36,9 @@ and a closed-loop coupling demo.
 
 ```
 $SCRATCH/GLUE/                      git clone, branch glue2-solps-eirene (abdoudiaw/GLUE, private)
-  glue2/glue2/                      the glue2 package (ingest, snapshot, b2view, cli ...)
-  glue2/configs/diiid_eirene_v3.nersc.example.yaml   the config used here
-  glue2/campaigns/nersc/train_eirene_sources.sbatch  the job script
+  glue2/                      the glue2 package (ingest, snapshot, b2view, cli ...)
+  configs/diiid_eirene_v3.nersc.example.yaml   the config used here
+  campaigns/nersc/train_eirene_sources.sbatch  the job script
   external/solstice/                submodule, branch feature/eirene-sources (abdoudiaw/solstice, private)
     configs/training/eirene_sources.yaml             the training recipe
     src/solstice/training/sources_data.py, sources_cli.py   the sources task
@@ -61,10 +61,10 @@ ls $SCRATCH/eirene_nn/glue2_work/diiid_eirene_v3/snapshots/43f5b89db3f5c301/data
    $SCRATCH/eirene_nn/stores/diiid_appfpp_eirene_v3_mesh.nc        # both must exist
 
 # smoke test (interactive GPU node or login node, ~2 min): proves paths and code
-EPOCHS=2 NAME=smoke bash glue2/campaigns/nersc/train_eirene_sources.sbatch
+EPOCHS=2 NAME=smoke bash campaigns/nersc/train_eirene_sources.sbatch
 
 # the real run: 1500 epochs, one A100, shared queue, resumes itself if resubmitted
-sbatch glue2/campaigns/nersc/train_eirene_sources.sbatch
+sbatch campaigns/nersc/train_eirene_sources.sbatch
 ```
 
 The script runs `python -m glue2.cli --config <config> train --name <NAME> ...`,
@@ -90,7 +90,7 @@ resumes from `last.pt` (`train.max_hours` stops it cleanly before the slot ends)
 Useful overrides (all go through `--set` of the training config):
 
 ```bash
-NAME=eirene_sources_v3_s1 EXTRA="--set seed=1" sbatch glue2/campaigns/nersc/train_eirene_sources.sbatch
+NAME=eirene_sources_v3_s1 EXTRA="--set seed=1" sbatch campaigns/nersc/train_eirene_sources.sbatch
 EPOCHS=300 NAME=short sbatch ...
 ```
 
@@ -161,7 +161,7 @@ seeds on one split are still under-dispersed and bootstrap splits remain the nex
 lever for the error bar). Decided: grow the training set, in particular with
 early-transient-phase EIRENE calls, only after the B2.5 coupling works.
 
-### GLUE2 learner: `solstice_sources` (`glue2/glue2/solstice_learner.py`)
+### GLUE2 learner: `solstice_sources` (`glue2/solstice_learner.py`)
 
 The SOLSTICE seed ensemble behind the Learner/Bundle protocol (mean, errbar,
 score, novelty, ok), registered next to `pca_ridge` (`learner: solstice_sources`
@@ -178,7 +178,7 @@ cases). `predict()` returns the sources in the event layout, so
 Build a bundle from existing runs and score it:
 
 ```bash
-cd $SCRATCH/GLUE && export PYTHONPATH=$PWD/glue2:$PWD/external/solstice/src
+cd $SCRATCH/GLUE && export PYTHONPATH=$PWD:$PWD/external/solstice/src
 python -m glue2.solstice_learner --snapshot $SCRATCH/eirene_nn/glue2_work/diiid_eirene_v3/snapshots/43f5b89db3f5c301 \
   --mesh-store $SCRATCH/eirene_nn/stores/diiid_appfpp_eirene_v3_mesh.nc --out-root $SCRATCH/eirene_nn/runs/bundles \
   $SCRATCH/eirene_nn/runs/eirene_sources_v3_jnode_s{0,1,2,3}
@@ -227,10 +227,10 @@ fresh); on an A100 expect ~1.5 s/epoch, so ~5 minutes per seed:
 
 ```bash
 cd $SCRATCH/GLUE && git pull && git submodule update --init external/solstice
-export PYTHONPATH=$PWD/glue2:$PWD/external/solstice/src
+export PYTHONPATH=$PWD:$PWD/external/solstice/src
 for s in 0 1 2 3 4 5 6 7 8; do
   SRC=$SCRATCH/eirene_nn/runs/<run dir of seed s>/best.pt
-  python -m glue2.cli --config glue2/configs/diiid_eirene_v3.nersc.example.yaml train \
+  python -m glue2.cli --config configs/diiid_eirene_v3.nersc.example.yaml train \
      --name eirene_sources_v3t_s$s --snapshot 48502aa2f61dc686 \
      --set seed=$s --set train.init_from=$SRC --set train.init_strict=false \
      --set train.epochs=200 --set train.lr=3.0e-4 --set train.warmup=5
@@ -254,5 +254,5 @@ Wall-tally head (6 x 74 values per case), SOLSTICE learner registration with
 GLUE2 (`errbar`/`ok` from the seed ensemble), and a surrogate mode in B2.5 (the
 replay hook already in the B2.5 fork, extended to skip the EIRENE call) for the
 closed-loop demo. The data-flow diagram of what B2.5 receives from EIRENE is in
-`glue2/docs/eirene_return_dataflow.png`; the training-dump contract in
-`glue2/docs/eirene_training_dump.md`.
+`docs/eirene_return_dataflow.png`; the training-dump contract in
+`docs/eirene_training_dump.md`.
