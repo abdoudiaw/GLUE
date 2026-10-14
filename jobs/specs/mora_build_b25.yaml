@@ -1,0 +1,7 @@
+# Rebuild b2mn.exe of the training-dump fork on Mora after a source change (rsync the files first).
+name: build_b25
+stage: build
+host: mora
+params:
+  touch_files: [src/sources/b2mod_eirene.F, src/modules/b2mod_eirene_training_dump.F90]
+  expect_symbols: [sheath_input, surrogate_decision]

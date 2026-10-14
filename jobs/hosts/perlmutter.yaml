@@ -1,0 +1,8 @@
+# NERSC Perlmutter: training host. Jobs are rendered here and submitted by the user (MFA login).
+name: perlmutter
+ssh: perlmutter.nersc.gov
+glue_root: /pscratch/sd/d/diawa/GLUE
+data_root: /pscratch/sd/d/diawa/eirene_nn
+venv: /pscratch/sd/d/diawa/venvs/solstice
+pytorch_module: pytorch/2.13.0
+account: m5186

@@ -1,0 +1,17 @@
+# Fine-tune the nine source seeds on snapshot 48502aa2f61dc686 (converged + transient events) with
+# the wall-tally head, then build the bundle. Rendered only; run on Perlmutter from $SCRATCH/GLUE.
+name: finetune_transient_tallies
+stage: train
+host: perlmutter
+params:
+  submit_hint: "bash jobs/rendered/finetune_transient_tallies.sh on a GPU node (about 5 min per seed)"
+  commands:
+    - 'for s in 0 1 2 3 4 5 6 7 8; do'
+    - '  SRC=$(ls -d $SCRATCH/eirene_nn/runs/eirene_sources_v3*s$s*/best.pt 2>/dev/null | head -1)'
+    - '  [ -z "$SRC" ] && SRC=$SCRATCH/eirene_nn/runs/eirene_sources_v3/best.pt'
+    - '  python -m glue2.cli --config configs/diiid_eirene_v3.nersc.example.yaml train --name eirene_sources_v3t_s$s --snapshot 48502aa2f61dc686 \'
+    - '    --set seed=$s --set train.init_from=$SRC --set train.init_strict=false --set train.epochs=200 --set train.lr=3.0e-4'
+    - 'done'
+    - 'python -m glue2.solstice_learner --snapshot $SCRATCH/eirene_nn/glue2_work/diiid_eirene_v3/snapshots/48502aa2f61dc686 \'
+    - '  --mesh-store $SCRATCH/eirene_nn/stores/diiid_appfpp_eirene_v3_mesh.nc --out-root $SCRATCH/eirene_nn/runs/bundles \'
+    - '  $SCRATCH/eirene_nn/runs/eirene_sources_v3t_s{0..8}'

@@ -1,0 +1,26 @@
+# Mora: the SOLPS-ITER run host (cloud VM, 122 cores, no GPU, user `cloud`, tcsh).
+name: mora
+ssh: mora
+solps_tree: /home/cloud/local/solps/solps-iter-eirene-training-dump    # training-dump fork (B2.5 with replay/surrogate modes)
+solps_old_tree: /home/cloud/local/solps/solps-iter-3.0.8-devel         # 3.0.8, can start from the flat uniform state
+solps_libs: /home/cloud/local/solps/solps-libs
+python: /home/cloud/venvs/glue2-py310/bin/python
+glue_root: /home/cloud/local/GLUE          # rsync target of this repository's glue2/ and external/solstice/src
+data_root: /home/cloud/eirene_nn           # bundles/, stores/
+runs_root: /home/cloud/solps-runs/diii-d/acceleration_tests
+template_case: /home/cloud/solps-runs/diii-d/acceleration_tests/template_chi1
+jobs_root: /home/cloud/solps-runs/diii-d/jobs      # rendered scripts and logs
+mpi_ranks: 32                                       # leave headroom: 64 ranks starve sshd
+omp_threads: 8
+# Lines that make a non-interactive launch work (host name detection, hwloc GL probe, libmscl):
+launch_env_tcsh: |
+  setenv SOLPS_HOST_NAME_FORCE ORNL
+  source setup.csh gfortran
+  setenv GLI_HOME /home/cloud/local/solps/solps-libs
+  setenv MSCL_ROOT /home/cloud/local/solps/solps-libs/lib
+  setenv HWLOC_COMPONENTS "-gl"
+  if ($?LD_LIBRARY_PATH) then
+    setenv LD_LIBRARY_PATH /home/cloud/local/solps/solps-libs/lib:${LD_LIBRARY_PATH}
+  else
+    setenv LD_LIBRARY_PATH /home/cloud/local/solps/solps-libs/lib
+  endif
