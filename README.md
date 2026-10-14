@@ -26,6 +26,8 @@ docs/           training-dump contract, data-flow diagram of what B2.5 receives 
 notebooks/      event-file explorers
 tests/
 legacy/         the SOLPEx 5-in/4-out socket prototype, reference only
+jobs/           host files, stage templates and job specs for `glue2.jobs` (build, campaign,
+                train, couple): rendered to plain scripts, launched on Mora or handed to Perlmutter
 external/       submodules: solstice (the GNN and its trainers, branch
                 feature/eirene-sources) and the SOLPS-ITER fork (branch
                 feature/eirene-training-dump) whose B2.5 writes the training events,
@@ -74,6 +76,13 @@ python -m glue2.replay --bundle B --template EVENT --out-dir D       # replay fi
 python -m glue2.surrogate_service --bundle B --run-dir b2mn.exe.dir  # the live service
 ```
 
+```
+python -m glue2.jobs render jobs/specs/<spec>.yaml   # plain script in jobs/rendered/
+python -m glue2.jobs run    jobs/specs/<spec>.yaml   # copy to the host and launch (Mora)
+python -m glue2.jobs status jobs/specs/<spec>.yaml   # tail its log
+python -m glue2.jobs sync   mora                     # rsync the package and SOLSTICE to a host
+```
+
 `pip install -e '.[dev]'` and `pytest` from the repository root; the trainer
 needs `external/solstice` on `PYTHONPATH` (or installed) with torch and
 torch_geometric.
@@ -101,4 +110,4 @@ noise on the stratum-weighted sources of held-out converged cases. One-step
 replay and live surrogate-mode runs on Mora reproduce the plasma step at the
 noise level in the main SOL and within a few times the noise in the divertor
 legs. The early transient of a uniform start is outside the training set and
-is being added. Hand-offs with the details: `docs/nersc_handoff_eirene_sources.md`.
+is being added. Hand-offs with the details: `docs/handoffs/nersc_eirene_sources.md`.

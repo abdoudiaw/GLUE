@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "glue2"
-version = "0.1.0"
+version = "0.2.0"
 description = "GLUE v2: active-learning data plane for the SOLPS-ITER B2.5-EIRENE seam"
 authors = [{ name = "Abdourahmane Diaw" }]
 license = { text = "BSD-3-Clause" }
@@ -13,9 +13,12 @@ dependencies = ["numpy", "netCDF4", "pyyaml"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
+# the trainer and the SOLSTICE learner/service additionally need external/solstice with torch and torch_geometric
+train = ["torch>=2.2", "torch_geometric", "xarray", "scipy"]
 
 [project.scripts]
 glue2 = "glue2.cli:main"
+glue2-jobs = "glue2.jobs:main"
 
 [tool.setuptools]
 packages = ["glue2"]
