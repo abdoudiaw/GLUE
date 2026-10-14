@@ -49,6 +49,12 @@ ANSWER = "eirene_surrogate_answer.nc"
 FALLBACK = "eirene_surrogate_fallback"
 
 
+def _rmse(bundle, name: str) -> float:
+    """Held-out RMSE of a target, keyed by kind (SOLSTICE bundles) or by variable (baseline)."""
+    kind = name.split("_", 1)[1]
+    return float(bundle.rmse.get(kind, bundle.rmse.get(name, 1.0)))
+
+
 def gate_score(bundle, pred, kinds: list[str] | None):
     """(score, ok) of the bundle, or restricted to the given kinds (errbar/rmse max over them)."""
     if not kinds:
@@ -57,7 +63,7 @@ def gate_score(bundle, pred, kinds: list[str] | None):
     for name, eb in pred.errbar.items():
         kind = name.split("_", 1)[1]
         if kind in kinds:
-            ratios.append(float(eb[0]) / max(bundle.rmse[kind], 1e-12))
+            ratios.append(float(eb[0]) / max(_rmse(bundle, name), 1e-12))
     if not ratios:
         raise ValueError(f"gate kinds {kinds} match none of {sorted(pred.errbar)}")
     score = max(ratios)
@@ -129,7 +135,7 @@ def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_pa
             use = ok if policy == "gate" else policy == "always"
             rec = {"call": call, "score": score, "novelty": float(pred.novelty[0]), "ok": ok,
                    "score_all_kinds": float(pred.score[0]), "surrogate": use, "bundle": bundle.bundle_id,
-                   "ratios": {n.split("_", 1)[1]: round(float(e[0]) / max(bundle.rmse[n.split("_", 1)[1]], 1e-12), 3)
+                   "ratios": {n.split("_", 1)[1]: round(float(e[0]) / max(_rmse(bundle, n), 1e-12), 3)
                               for n, e in pred.errbar.items()}}
             if keep:
                 shutil.copyfile(req, keep / f"request_call{call:06d}.nc")
