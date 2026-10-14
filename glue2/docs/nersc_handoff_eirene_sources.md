@@ -192,6 +192,62 @@ arrays (unweighted, all strata), so its `smo` numbers look poor (signed field,
 domain sum near zero); the stratum-weighted metrics of `metrics.json` are the
 ones that matter for B2.5.
 
+## Status 2026-10-14 (Mac): transient data and the tally head
+
+The first B2.5 coupling test ran on Mora (one-step replay of the 9-seed surrogate on
+the evolved transient case): mechanics work, the masked-truth step is identical to
+the true step (momentum slots 1-2 and unused strata do not matter), the surrogate
+step is at the Monte Carlo noise level in the main SOL and 3-4x above it in the
+divertor legs. Scoring the early uniform-start transient (steps 50-120 of the
+`acceleration_tests` trajectory) with the bundle gives gate scores of 11-12 and
+novelty 2.3: that regime is absent from the training set. 84 transient events
+(4 cases, `run_tr00050_s{0,1}__D`, `run_tr00100_s{0,1}__D`; `_s1` are perturbed
+restarts) were ingested on the Mac with origin `al_request`, so they never enter
+the converged val/test splits:
+
+    snapshot 48502aa2f61dc686: train 596 (536 converged + 60 transient), val 102,
+    test 123 (converged, unchanged), acq_test 20 (one transient case, held out)
+
+The snapshot directory (497 MB) is copied by the user into
+`$SCRATCH/eirene_nn/glue2_work/diiid_eirene_v3/snapshots/48502aa2f61dc686/`.
+
+GLUE commit `082a267` / SOLSTICE `809d988` (pushed) add the wall-tally head
+(`model.tally_head`, 6 tallies x 7 strata x 74 surfaces as a pooled global output,
+on by default in `eirene_sources.yaml`) and `train.init_strict: false`, which lets
+a checkpoint without the head initialise a model with it. `b2view.py` now returns
+the tallies per stratum, which is how B2.5 consumes them; the old snapshot stores
+all stratum slots, so no snapshot rebuild is needed for that.
+
+### Recipe: fine-tune the existing seeds on the new snapshot, with the tally head
+
+One run per existing seed run (the nine from `runs/SUMMARY.md`, plus seeds 5-8 when
+they exist), all parameters trainable, lower learning rate, short schedule. Verified
+on the Mac at 2 epochs (`init_strict` reports the six `global_head.*` tensors as
+fresh); on an A100 expect ~1.5 s/epoch, so ~5 minutes per seed:
+
+```bash
+cd $SCRATCH/GLUE && git pull && git submodule update --init external/solstice
+export PYTHONPATH=$PWD/glue2:$PWD/external/solstice/src
+for s in 0 1 2 3 4 5 6 7 8; do
+  SRC=$SCRATCH/eirene_nn/runs/<run dir of seed s>/best.pt
+  python -m glue2.cli --config glue2/configs/diiid_eirene_v3.nersc.example.yaml train \
+     --name eirene_sources_v3t_s$s --snapshot 48502aa2f61dc686 \
+     --set seed=$s --set train.init_from=$SRC --set train.init_strict=false \
+     --set train.epochs=200 --set train.lr=3.0e-4 --set train.warmup=5
+done
+python -m glue2.solstice_learner --snapshot $SCRATCH/eirene_nn/glue2_work/diiid_eirene_v3/snapshots/48502aa2f61dc686 \
+  --mesh-store $SCRATCH/eirene_nn/stores/diiid_appfpp_eirene_v3_mesh.nc --out-root $SCRATCH/eirene_nn/runs/bundles \
+  $SCRATCH/eirene_nn/runs/eirene_sources_v3t_s{0..8}
+```
+
+What to report: (1) `metrics.json` of one run: the weighted-field numbers on `test`
+must not regress against the 9-seed bundle (sni ~11 %, see ~11 %, smo ~25 %,
+sei ~34 %), and the new `tallies` block (per-tally rel L2 and per-stratum surface
+sums); (2) the bundle's `evaluate` on `acq_test` (the held-out transient case):
+gate acceptance and rel_l2 there are the point of the exercise, they were 0 % and
+>100 % before; (3) the bundle id and its calibration. The bundle then goes back to
+the Mac (tar + JupyterLab download, as before) for the coupled run on Mora.
+
 ## Where this goes next (not for this hand-off)
 
 Wall-tally head (6 x 74 values per case), SOLSTICE learner registration with
