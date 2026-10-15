@@ -1,0 +1,16 @@
+# Quick mechanics check after a B2.5 rebuild: 3 steps from the evolved replay-bed state, surrogate on
+# every call the service can answer (always), dump on. Expect: call 0 EIRENE, calls 1-2 surrogate.
+name: check3
+stage: couple
+host: mora
+params:
+  init_state: /home/cloud/solps-runs/diii-d/acceleration_tests/replay_test/b2fstati
+  nsteps: 3
+  replay: 3
+  dump: 1
+  policy: always
+  bundle: /home/cloud/eirene_nn/bundles/solstice_sources-831f5309e355
+  service_args: "--skip-targets 'wneutrals_*'"
+  overwrite: 1
+  keep_every: 1
+  case_group: checks
