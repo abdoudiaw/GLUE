@@ -1,0 +1,16 @@
+# Run 4a: plain B2.5-EIRENE (replay 0, dump 0) from the NN v2 state (pepc-diiid-state-v2), 10 x 1000 steps, states every
+# 1000 steps, to measure steps-to-convergence from the initial state alone (the service idles).
+name: nn_init_v2_eirene
+stage: couple
+host: perlmutter
+params:
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstati.nn_v2
+  replay: 0
+  dump: 0
+  policy: never
+  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-2942df28b850
+  service_args: "--skip-targets 'wneutrals_*'"
+  keep_every: 0
+  nseg: 10
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  service_prefix: "srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1"

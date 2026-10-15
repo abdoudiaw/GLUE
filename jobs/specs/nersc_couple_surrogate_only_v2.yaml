@@ -1,0 +1,15 @@
+# Run 2b: the surrogate answers every call (no gate), from the same uniform step-50 state as run 2, but
+# with the bundle the gated run (run 3) promoted last. [BUNDLE] is filled in by campaigns/nersc/launch_with_promoted.sh.
+name: surrogate_only_v2
+stage: couple
+host: perlmutter
+params:
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstate_step00050
+  replay: 3
+  dump: 1
+  policy: always
+  bundle: "[BUNDLE]"
+  service_args: "--skip-targets 'wneutrals_*'"
+  keep_every: 10
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  service_prefix: "srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1"

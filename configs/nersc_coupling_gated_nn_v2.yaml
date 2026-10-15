@@ -1,0 +1,49 @@
+# GLUE2 loop on the Perlmutter node that runs the gated coupled run (run 3): ingest the run's
+# fallback events as acquired cases, fine-tune the current members on GPUs 1-3 when enough new
+# events exist, calibrate on both held-out splits, promote on no regression, and hand the new
+# bundle to the service through the reload file. Run it with campaigns/nersc/retrain_loop.sh.
+workdir: /pscratch/sd/d/diawa/eirene_nn/glue2_work/diiid_eirene_v3
+ingest_roots:                      # the converged campaign (already in the catalog; rescans are cheap)
+  - /pscratch/sd/d/diawa/eirene_nn/campaign_events/eirene_training_v3__ens__DIII-D__APP-FPP__D_C_Ne__ss__lhs__20250124_144649
+acquired_roots:                    # the gated run's fallback calls (origin al_request: train / acq_test only)
+  - /pscratch/sd/d/diawa/eirene_nn/transient_events
+  - /pscratch/sd/d/diawa/eirene_nn/coupling/runs/gated/events
+  - /pscratch/sd/d/diawa/eirene_nn/coupling/runs/gated_nn_v2/events
+reload_file: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/gated_nn_v2/reload_bundle
+settle_seconds: 30
+exclude: ["_*", ".*"]
+skip_dataless: true
+max_new_cases: null
+
+spec:
+  event_kinds: [single_call]
+  used_only: true
+  val_fraction: 0.15
+  test_fraction: 0.15
+  dtype: float32
+  inputs: [braeir_dni, braeir_vv, braeir_uu, braeir_ww, braeir_up, braeir_fnix, braeir_fniy, braeir_zi,
+           braeir_te, braeir_ti, braeir_pr, braeir_rr, braeir_feix, braeir_feiy, braeir_feex, braeir_feey,
+           braeir_vol, braeir_bfield, braeir_bpol, braeir_btor, braeir_delta_sheathx, braeir_delta_sheathy,
+           braeir_aiso, braeir_po, b2_tflux, b2_flux_scale]
+  targets: [eirbra_sni, eirbra_smo, eirbra_see, eirbra_sei,
+            wneutrals_wldna, wneutrals_wldra, wneutrals_wldpa, wneutrals_wldnm, wneutrals_wldrm, wneutrals_wldpm]
+
+learner: solstice_sources
+learner_params:
+  warm_start: "[BUNDLE]"   # filled by campaigns/nersc/launch_with_promoted.sh with the promoted bundle
+  epochs: 30
+  lr: 3.0e-4
+  max_hours: 1.0
+  mesh_store: /pscratch/sd/d/diawa/eirene_nn/stores/diiid_appfpp_eirene_v3_mesh.nc
+  calib_splits: [val, acq_test]
+  fussiness: 1.75
+  novelty_max: 1.0
+  knn: 5
+  device: cuda
+  train_jobs: 3                   # members fine-tuned concurrently ...
+  train_devices: [cuda:1, cuda:2, cuda:3]   # ... on the coupled node's idle GPUs (the service holds GPU 0) ...
+  train_prefix: "srun -N 1 -n 1 -c 8 --overlap --gpus-per-node=4"   # ... as job steps of the run's allocation
+retrain_min_new: 50                # fallback events per retrain
+promote_tolerance: 0.05
+batch_size: 0
+max_open_requests: 0
