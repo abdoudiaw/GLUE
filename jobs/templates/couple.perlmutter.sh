@@ -36,9 +36,22 @@ module load ${pytorch_module}
 source ${venv}/bin/activate
 export PYTHONPATH=${glue_root}:${glue_root}/external/solstice/src SOLSTICE_DATA=${data_root}/stores OMP_NUM_THREADS=${omp_threads}
 
+# the bundle: the spec's, or (retrain loop) the bundle the catalog has promoted since, so that a later
+# chunk of a run resumed with the same script continues with the retrained model
+BUNDLE=${bundle}
+if [ -n "${retrain_config}" ]; then
+  P=$(python -c 'import sys, yaml
+from glue2.catalog import Catalog
+cfg = yaml.safe_load(open(sys.argv[1]))
+with Catalog.reader(cfg["workdir"] + "/catalog.sqlite") as cat:
+    b = cat.promoted_bundle()
+    print(b["path"] if b is not None else "")' "${retrain_config}")
+  [ -n "$P" ] && BUNDLE=$P
+fi
+echo "bundle: $BUNDLE"
 # the service, on GPU 0, watching the case's b2mn.exe.dir for the whole job
 mkdir -p $WORK/case/b2mn.exe.dir
-CUDA_VISIBLE_DEVICES=0 python -m glue2.surrogate_service --bundle ${bundle} --run-dir $WORK/case/b2mn.exe.dir \
+CUDA_VISIBLE_DEVICES=0 python -m glue2.surrogate_service --bundle $BUNDLE --run-dir $WORK/case/b2mn.exe.dir \
    --device cuda --log $OUT/service.jsonl --reload-file $OUT/reload_bundle \
    --keep-requests $OUT/requests --keep-every ${keep_every} ${service_args} > $OUT/service.out 2>&1 &
 SVC=$!
@@ -46,6 +59,7 @@ sleep ${service_warmup}
 # the retrain loop (gated run): a separate process on GPUs 1-3, one glue2 cycle every retrain_interval s
 RL=""
 if [ -n "${retrain_config}" ]; then
+  rm -f $OUT/STOP    # left by a previous chunk of this run
   INTERVAL=${retrain_interval} RETRAIN_GPUS=1,2,3 GLUE_ROOT=${glue_root} \
     nohup bash ${glue_root}/campaigns/nersc/retrain_loop.sh ${retrain_config} > $OUT/retrain_loop.log 2>&1 &
   RL=$!

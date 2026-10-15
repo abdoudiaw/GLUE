@@ -1,0 +1,16 @@
+# Mechanics check on Perlmutter: 1 segment of 20 steps with the surrogate answering every call (replay 3,
+# policy always), from the step-50 state. Verifies the B2.5 <-> service exchange on the node.
+name: mech_check
+stage: couple
+host: perlmutter
+params:
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstate_step00050
+  replay: 3
+  dump: 1
+  policy: always
+  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-2942df28b850
+  service_args: "--skip-targets 'wneutrals_*'"
+  keep_every: 1
+  nseg: 1
+  seg_steps: 20
+  walltime: 00:30:00
