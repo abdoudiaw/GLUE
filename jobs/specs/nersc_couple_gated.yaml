@@ -9,6 +9,6 @@ params:
   replay: 3
   dump: 1
   policy: gate
-  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/[BUNDLE]
+  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-2942df28b850
   service_args: "--gate-kinds sni,smo,see,sei --skip-targets 'wneutrals_*'"
   keep_every: 10

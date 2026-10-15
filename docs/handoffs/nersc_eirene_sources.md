@@ -256,3 +256,39 @@ replay hook already in the B2.5 fork, extended to skip the EIRENE call) for the
 closed-loop demo. The data-flow diagram of what B2.5 receives from EIRENE is in
 `docs/eirene_return_dataflow.png`; the training-dump contract in
 `docs/eirene_training_dump.md`.
+
+## Status 2026-10-15 (Perlmutter): full data set on NERSC, 13 members retrained with the transient data
+
+The Mac is out of the data loop. The 761 converged campaign cases were copied from Dropbox to
+`$SCRATCH/eirene_nn/campaign_events/` (rclone, resumable), the catalog's `events.path` and
+`cases.source` re-pointed there (backup `catalog.sqlite.bak-20261014`), and the five transient cases
+ingested with origin `al_request`. Snapshot `5057de7521c6cc55`: train 642 (536 converged + 106
+transient events from `run_tr00050_{gate50,s0,s1}`, `run_tr00100_s1`), val 102, test 123 (converged,
+unchanged), acq_test 20 (`run_tr00100_s0`, held out). Snapshot `cfc326d1530b18b3` is bogus (built while
+the campaign files were missing: the builder silently excludes unreadable events); never train on it.
+
+The 13 v3t members were fine-tuned on this snapshot (`runs/eirene_sources_v3u*`: init from the v3t
+`best.pt`, `init_strict false`, 200 epochs, lr 3e-4, tally head on). Converged `test`, weighted rel L2
+median: sni 9 %, see 8-9 %, smo 20-21 %, sei 31-32 %; tallies 3-5 % per tally (no regression vs v3t).
+Every run reaches its best validation loss by epoch 25-90; after epoch 25 the gain is below 0.1 %, so
+an online retrain needs ~30 epochs (45 s per member on an A100 alone), not 200.
+
+Bundles (13 members, 10 targets, n_train 642, fussiness 1.5, novelty_max 1.0):
+
+| bundle | `--calib-splits` | acq_test rel_l2 / gate | val gate | test gate |
+|---|---|---|---|---|
+| `solstice_sources-2942df28b850` | val (default) | 0.243 / 85 % | 82 % | 82 % |
+| `solstice_sources-a16128093914` | val,acq_test | 0.243 / 100 % | 81 % | 81 % |
+
+Compared with `831f5309e355` (60 transient events): acq_test rel_l2 0.32 -> 0.24 and gate 0 % -> 85 %
+with the honest (val-only) calibration. Fussiness sweep on `2942df28b850` (gate rate acq_test / val /
+test): 1.0: 0 / 53 / 43 %; 1.25: 20 / 71 / 73 %; 1.5: 85 / 82 / 82 %; 1.75: 100 / 85 / 92 %;
+2.0: 100 / 91 / 93 %. The coupled runs use `2942df28b850` (the acq_test case is then genuinely
+out of calibration); `a16128093914` is the reference point for what calibrating on acquired events does.
+
+Operational notes: the Jupyter/interactive nodes expire every few hours; a `last.pt` cut off mid-write
+is truncated to a 16 MiB multiple and fails to load (`PytorchStreamReader ... central directory`): delete
+the run directory and restart from the v3t checkpoint. Long steps run with `nohup` and logs in
+`$SCRATCH/eirene_nn/logs/`. Helper scripts in `$SCRATCH/eirene_nn/tools/`: `finetune_v3u.sh`
+(`SNAP=<id> finetune_v3u.sh <gpu> <src run>:<seed> ...`), `bundle_v3t.sh` (`SNAP=<id> V=v3u ...
+[--calib-splits ...]`), `eval_splits.sh` (`SNAP=<id> eval_splits.sh <absolute bundle dir>`).
