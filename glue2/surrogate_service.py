@@ -17,8 +17,9 @@ logs (shadow mode, EIRENE runs every step). `--gate-kinds sni,smo,see,sei`
 restricts the score to those kinds (e.g. while the tally error bars are not
 calibrated for a regime), `--skip-targets 'wneutrals_*'` leaves those
 variables of the answer at the request's values (the previous EIRENE call's),
-`--keep-requests DIR` keeps a copy of every request, i.e. the plasma
-background B2.5 sent at each call, for trajectory comparisons, and
+`--keep-requests DIR` keeps a copy of the requests, i.e. the plasma
+background B2.5 sent at each call, for trajectory comparisons (every
+`--keep-every` N-th call, default 1), and
 `--max-consecutive N` forces an EIRENE call after N consecutive surrogate
 answers (an anchor against drift: the gate judges single calls and cannot
 see accumulated error). Decisions go to a JSONL log.
@@ -100,7 +101,7 @@ def write_answer(bundle, request: Path, answer: Path, pred, skip: list[str] | No
 def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_path: str | None,
           poll: float = 0.05, once: bool = False, reload_file: str | None = None,
           gate_kinds: list[str] | None = None, skip_targets: list[str] | None = None,
-          keep_requests: str | None = None, max_consecutive: int = 0) -> int:
+          keep_requests: str | None = None, max_consecutive: int = 0, keep_every: int = 1) -> int:
     run = Path(run_dir)
     streak = 0
     keep = Path(keep_requests) if keep_requests else None
@@ -144,7 +145,7 @@ def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_pa
                    "score_all_kinds": float(pred.score[0]), "surrogate": use, "bundle": bundle.bundle_id,
                    "ratios": {n.split("_", 1)[1]: round(float(e[0]) / max(_rmse(bundle, n), 1e-12), 3)
                               for n, e in pred.errbar.items()}}
-            if keep:
+            if keep and call % max(int(keep_every), 1) == 0:
                 shutil.copyfile(req, keep / f"request_call{call:06d}.nc")
             if use:
                 rec["sums"] = write_answer(bundle, req, ans, pred, skip_targets)
@@ -180,6 +181,7 @@ def main(argv=None) -> int:
     ap.add_argument("--skip-targets", default=None,
                     help="comma-separated fnmatch patterns of target variables to keep from the request")
     ap.add_argument("--keep-requests", default=None, help="directory in which every request is kept")
+    ap.add_argument("--keep-every", type=int, default=1, help="keep every N-th request only (with --keep-requests)")
     ap.add_argument("--max-consecutive", type=int, default=0,
                     help="force an EIRENE call after this many consecutive surrogate answers (0: never)")
     a = ap.parse_args(argv)
@@ -187,7 +189,7 @@ def main(argv=None) -> int:
     return serve(a.bundle, a.run_dir, a.device, policy, a.log, once=a.once, reload_file=a.reload_file,
                  gate_kinds=a.gate_kinds.split(",") if a.gate_kinds else None,
                  skip_targets=a.skip_targets.split(",") if a.skip_targets else None,
-                 keep_requests=a.keep_requests, max_consecutive=a.max_consecutive)
+                 keep_requests=a.keep_requests, max_consecutive=a.max_consecutive, keep_every=a.keep_every)
 
 
 if __name__ == "__main__":

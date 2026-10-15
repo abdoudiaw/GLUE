@@ -46,7 +46,7 @@ STAGE_DEFAULTS = {
                  "dropbox": "dropbox:SOLPS_DB/eirene_training_v3_transient__DIII-D__APP-FPP__uniform_dt1e-5"},
     "couple": {"nsteps": 50, "dt": "1.0e-5", "replay": 0, "dump": 0, "timeout": "300.0", "policy": "gate",
                "bundle": "", "service_warmup": 35, "overwrite": 0, "extra_b2mn": "", "case_group": "al_tests",
-               "service_args": "",
+               "service_args": "", "keep_every": 10,
                "init_state": None},
     "train": {"commands": [], "submit_hint": "sbatch campaigns/nersc/train_eirene_sources.sbatch"},
 }
