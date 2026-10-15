@@ -27,6 +27,11 @@ WORK=${exchange_dir}/$NAME                 # node-local: the running case
 START=${START_STATE:-${start_state}}
 NSEG=${nseg}; SEG=${seg_steps}; DT=${dt}
 mkdir -p $OUT/states $OUT/events $OUT/segments $OUT/requests ${coupling_root}/runs/logs $WORK
+# one driver per run: a batch job and an interactive chunk must never work on the same run directory
+if [ -s $OUT/RUNNING ] && [ "$(cat $OUT/RUNNING)" != "${SLURM_JOB_ID:-}" ] && squeue -h -j "$(cat $OUT/RUNNING)" 2>/dev/null | grep -q .; then
+  echo "$NAME is already being run by job $(cat $OUT/RUNNING); exiting"; exit 0
+fi
+echo "${SLURM_JOB_ID:-}" > $OUT/RUNNING
 cd ${solps_tree}
 set +u    # the SOLPS setup references unset variables
 ${launch_env_bash}
