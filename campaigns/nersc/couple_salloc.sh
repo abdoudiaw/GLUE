@@ -10,5 +10,8 @@
 set -u
 NAME=${1:?rendered job name}; WALL=${2:-04:00:00}
 cd ${GLUE_ROOT:-$SCRATCH/GLUE}
+# drop the SLURM variables of the job this shell runs in (a Jupyter node): steps inside the new
+# allocation inherit e.g. SLURM_MEM_PER_CPU and then fail on nodes with less memory
+unset $(env | grep -oE "^SLURM_[A-Za-z0-9_]+" | tr "\n" " ") 2>/dev/null
 exec salloc -A m5186 -q interactive -C "gpu&hbm80g" -N 1 --ntasks-per-node=64 --cpus-per-task=2 --gpus-per-node=4 -t $WALL -J $NAME \
   bash jobs/rendered/$NAME.sh
