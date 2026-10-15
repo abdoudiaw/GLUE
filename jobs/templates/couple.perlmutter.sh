@@ -51,16 +51,20 @@ fi
 echo "bundle: $BUNDLE"
 # the service, on GPU 0, watching the case's b2mn.exe.dir for the whole job
 mkdir -p $WORK/case/b2mn.exe.dir
-CUDA_VISIBLE_DEVICES=0 python -m glue2.surrogate_service --bundle $BUNDLE --run-dir $WORK/case/b2mn.exe.dir \
+CUDA_VISIBLE_DEVICES=0 ${service_prefix} python -m glue2.surrogate_service --bundle $BUNDLE --run-dir $WORK/case/b2mn.exe.dir \
    --device cuda --log $OUT/service.jsonl --reload-file $OUT/reload_bundle \
    --keep-requests $OUT/requests --keep-every ${keep_every} ${policy_flag} ${service_args} > $OUT/service.out 2>&1 &
 SVC=$!
 sleep ${service_warmup}
+# ship dumped EIRENE events to $OUT/events while a segment runs (files untouched for 2 min are closed),
+# so the retrain loop can act within a segment instead of only at its end
+( while true; do sleep 120; find $WORK/case/b2mn.exe.dir $WORK/case -maxdepth 1 -name 'eirene_training_v3_*.nc' -mmin +2 -exec mv -t $OUT/events/ {} + 2>/dev/null; done ) &
+SHIP=$!
 # the retrain loop (gated run): a separate process on GPUs 1-3, one glue2 cycle every retrain_interval s
 RL=""
 if [ -n "${retrain_config}" ]; then
   rm -f $OUT/STOP    # left by a previous chunk of this run
-  INTERVAL=${retrain_interval} RETRAIN_GPUS=1,2,3 GLUE_ROOT=${glue_root} \
+  INTERVAL=${retrain_interval} RETRAIN_GPUS=${retrain_gpus} GLUE_ROOT=${glue_root} \
     nohup bash ${glue_root}/campaigns/nersc/retrain_loop.sh ${retrain_config} > $OUT/retrain_loop.log 2>&1 &
   RL=$!
 fi
@@ -95,10 +99,10 @@ for i in $(seq 1 $NSEG); do
     [ -f b2mn.exe.dir/eirene_surrogate_decisions.log ] && cat b2mn.exe.dir/eirene_surrogate_decisions.log >> $OUT/decisions.log
   else
     cp -p run.log $OUT/segments/run_$tag.FAILED.log 2>/dev/null; cp -p b2mn.exe.dir/eirene_surrogate_decisions.log $OUT/segments/decisions_$tag.FAILED.log 2>/dev/null
-    echo "segment to step $s FAILED; stopping"; kill $SVC; [ -n "$RL" ] && { touch $OUT/STOP; kill $RL; }; exit 3
+    echo "segment to step $s FAILED; stopping"; kill $SVC $SHIP; [ -n "$RL" ] && { touch $OUT/STOP; kill $RL; }; exit 3
   fi
   step=$s; prev_state=$OUT/states/state_$tag
 done
-kill $SVC 2>/dev/null
+kill $SVC $SHIP 2>/dev/null
 [ -n "$RL" ] && { touch $OUT/STOP; kill $RL 2>/dev/null; }
 echo "=== $NAME done $(date): states $(ls $OUT/states | grep -c state_)"

@@ -11,3 +11,7 @@ params:
   bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-2942df28b850
   service_args: "--skip-targets 'wneutrals_*'"
   keep_every: 10
+  # interactive route (campaigns/nersc/couple_salloc.sh): the driver runs where salloc runs, the service
+  # and B2.5 are sibling job steps on the node, the case lives on scratch
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  service_prefix: "srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1"

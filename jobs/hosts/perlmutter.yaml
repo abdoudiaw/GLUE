@@ -13,7 +13,7 @@ account: m5186
 qos: regular
 constraint: gpu
 mpi_ranks: 64            # EIRENE ranks; B2.5 itself is serial on rank 0
-omp_threads: 8           # the service's CPU threads (its model runs on GPU 0)
+omp_threads: 2           # the service's CPU threads (its model runs on GPU 0; 8 threads slowed EIRENE's 64 ranks by 2 s/step)
 exchange_dir: /dev/shm/eirene_surrogate   # request/answer files on node-local storage, never Lustre
 # [NERSC session: the lines that make b2run/mpirun work on Perlmutter for this build]
 launch_env_bash: |
