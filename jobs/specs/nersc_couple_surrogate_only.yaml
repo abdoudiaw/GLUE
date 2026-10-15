@@ -1,0 +1,13 @@
+# Run 2 of the APS-DPP comparison: the surrogate answers every call after the first (no gate), from the
+# same step-50 state as the Mora hero run, 15 x 1000 steps, states kept every 1000 steps. Perlmutter GPU node.
+name: surrogate_only
+stage: couple
+host: perlmutter
+params:
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstate_step00050
+  replay: 3
+  dump: 1
+  policy: always
+  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/[BUNDLE]
+  service_args: "--skip-targets 'wneutrals_*'"
+  keep_every: 10

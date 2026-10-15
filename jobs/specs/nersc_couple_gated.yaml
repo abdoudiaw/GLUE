@@ -1,0 +1,14 @@
+# Run 3 of the APS-DPP comparison: surrogate where the gate accepts, EIRENE otherwise, fallback calls
+# recorded as training events (origin al_request) and retrained on by the node's retrain loop. Same start
+# and layout as run 2. Anchor off; the anchored variant is a separate run (add --max-consecutive N).
+name: gated
+stage: couple
+host: perlmutter
+params:
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstate_step00050
+  replay: 3
+  dump: 1
+  policy: gate
+  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/[BUNDLE]
+  service_args: "--gate-kinds sni,smo,see,sei --skip-targets 'wneutrals_*'"
+  keep_every: 10

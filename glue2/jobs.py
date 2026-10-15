@@ -50,6 +50,10 @@ STAGE_DEFAULTS = {
                "init_state": None},
     "train": {"commands": [], "submit_hint": "sbatch campaigns/nersc/train_eirene_sources.sbatch"},
 }
+# couple on perlmutter: the same keys plus the segment chain and the Slurm/launch pieces
+STAGE_DEFAULTS["couple"].update({"nseg": 15, "seg_steps": 1000, "walltime": "12:00:00",
+                                 "start_state": None,
+                                 "b2run_line": "b2run -m \\\"srun -n ${mpi_ranks}\\\" b2mn >& run.log   # [NERSC session: the launch line of its build]"})
 EXT = {"build": "csh", "campaign": "sh", "couple": "sh", "train": "sh"}
 
 
@@ -80,9 +84,13 @@ def variables(spec: dict, host: dict) -> dict:
         v["log_dir"] = f"{v['jobs_root']}/logs"
         v["job_log"] = f"{v['log_dir']}/{spec['name']}.log"
     if spec["stage"] == "couple":
+        if host.get("name") == "perlmutter" and v.get("start_state") and not v.get("init_state"):
+            v["init_state"] = v["start_state"]
         if not v.get("init_state"):
             raise ValueError("couple needs params.init_state (a b2fstate/b2fstati on the host)")
-        v["case_dir"] = f"{v['runs_root']}/{v['case_group']}/{spec['name']}"
+        v.setdefault("start_state", v["init_state"])
+        if "runs_root" in v:
+            v["case_dir"] = f"{v['runs_root']}/{v['case_group']}/{spec['name']}"
         if int(v["replay"]) == 3 and v["policy"] != "none" and not v["bundle"]:
             raise ValueError("couple with replay 3 needs params.bundle (a bundle directory on the host)")
     if spec["stage"] == "train" and isinstance(v["commands"], list):
@@ -90,8 +98,11 @@ def variables(spec: dict, host: dict) -> dict:
     for key in ("touch_files", "expect_symbols"):
         if isinstance(v.get(key), list):
             v[key] = " ".join(v[key])
-    if "launch_env_tcsh" in v:
-        v["launch_env_tcsh"] = v["launch_env_tcsh"].rstrip("\n")
+    for key in ("launch_env_tcsh", "launch_env_bash"):
+        if key in v:
+            v[key] = str(v[key]).rstrip("\n")
+    if "b2run_line" in v:          # the launch line may name the rank count
+        v["b2run_line"] = str(v["b2run_line"]).replace("${mpi_ranks}", str(v.get("mpi_ranks", "")))
     return {k: "" if val is None else str(val) for k, val in v.items()}
 
 
