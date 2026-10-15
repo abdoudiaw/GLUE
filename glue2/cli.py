@@ -131,6 +131,10 @@ def main(argv=None) -> int:
                          exclude=cfg.exclude, max_new_cases=cfg.max_new_cases,
                          skip_dataless=cfg.skip_dataless)
             print(json.dumps(rep.as_dict()))
+            if cfg.acquired_roots:
+                acq = ingest(cat, cfg.acquired_roots, origin="al_request", settle_seconds=cfg.settle_seconds,
+                             exclude=cfg.exclude, max_new_cases=cfg.max_new_cases, skip_dataless=cfg.skip_dataless)
+                print(json.dumps({"acquired": acq.as_dict()}))
         elif args.command == "snapshot":
             snap = build_snapshot(cat, cfg.spec, Path(cfg.workdir) / "snapshots")
             print(json.dumps({"snapshot_id": snap.snapshot_id, "counts": snap.manifest["counts"]}))

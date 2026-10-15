@@ -383,11 +383,45 @@ class SolsticeSourcesLearner:
                  train_config: str = "external/solstice/configs/training/eirene_sources.yaml",
                  mesh_store: str | None = None, library_src: str = "external/solstice/src",
                  fussiness: float = 1.5, novelty_max: float = 1.0, knn: int = 5,
-                 device: str | None = None, runs: list[str] | None = None, overrides: list[str] | None = None):
+                 device: str | None = None, runs: list[str] | None = None, overrides: list[str] | None = None,
+                 warm_start: str | None = None, calib_splits: list[str] | None = None, lr: float | None = None):
+        """warm_start: a bundle directory whose members are fine-tuned (one run per member,
+        `train.init_from` = that member, `init_strict` false so a new head starts fresh) instead
+        of training `members` seeds from scratch; calib_splits: splits the error bar is calibrated
+        on (default val); lr: learning rate override (fine-tunes use a lower one)."""
         self.params = dict(members=members, epochs=epochs, max_hours=max_hours, train_config=train_config,
                            mesh_store=mesh_store, library_src=library_src, fussiness=fussiness,
-                           novelty_max=novelty_max, knn=knn, overrides=list(overrides or []))
+                           novelty_max=novelty_max, knn=knn, overrides=list(overrides or []),
+                           warm_start=warm_start, calib_splits=list(calib_splits) if calib_splits else None, lr=lr)
         self.device, self.runs = device, runs
+
+    def training_commands(self, snapshot: Snapshot, out_root: str | Path) -> list[tuple[Path, list[str]]]:
+        """(run directory, trainer command) per member, without running anything."""
+        p = self.params
+        mesh_store = REPO_ROOT / p["mesh_store"]
+        warm = Path(p["warm_start"]) if p.get("warm_start") else None
+        if warm:
+            meta = json.loads((warm / "bundle.json").read_text())
+            members = [(k, int(seed), warm / m) for k, (m, seed) in enumerate(zip(meta["members"], meta["member_seeds"]))]
+        else:
+            members = [(k, k, None) for k in range(int(p["members"]))]
+        out = []
+        for k, seed, init in members:
+            out_dir = Path(out_root) / ".runs" / snapshot.snapshot_id / f"member{k}"
+            cmd = [sys.executable, "-m", "solstice.training.cli", "--config", str(REPO_ROOT / p["train_config"]),
+                   "--set", f"data.snapshot={snapshot.path}", "--set", f"data.mesh_store={mesh_store}",
+                   "--set", f"out_dir={out_dir}", "--set", f"seed={seed}",
+                   "--set", f"train.epochs={p['epochs']}", "--set", f"train.max_hours={p['max_hours']}"]
+            if init is not None:
+                cmd += ["--set", f"train.init_from={init}", "--set", "train.init_strict=false"]
+            if p.get("lr"):
+                cmd += ["--set", f"train.lr={p['lr']}"]
+            for item in p["overrides"]:
+                cmd += ["--set", item]
+            if self.device:
+                cmd += ["--device", self.device]
+            out.append((out_dir, cmd))
+        return out
 
     def fit(self, snapshot: Snapshot, out_root: str | Path) -> Path:
         p = self.params
@@ -398,24 +432,15 @@ class SolsticeSourcesLearner:
         if not runs:
             lib_src = REPO_ROOT / p["library_src"]
             env = dict(os.environ)
-            env["PYTHONPATH"] = os.pathsep.join([str(lib_src), str(REPO_ROOT / "glue2"), env.get("PYTHONPATH", "")])
-            for seed in range(int(p["members"])):
-                out_dir = Path(out_root) / ".runs" / snapshot.snapshot_id / f"seed{seed}"
+            env["PYTHONPATH"] = os.pathsep.join([str(lib_src), str(REPO_ROOT), env.get("PYTHONPATH", "")])
+            for out_dir, cmd in self.training_commands(snapshot, out_root):
                 runs.append(out_dir)
                 if (out_dir / "metrics.json").exists():
                     continue
-                cmd = [sys.executable, "-m", "solstice.training.cli", "--config", str(REPO_ROOT / p["train_config"]),
-                       "--set", f"data.snapshot={snapshot.path}", "--set", f"data.mesh_store={mesh_store}",
-                       "--set", f"out_dir={out_dir}", "--set", f"seed={seed}",
-                       "--set", f"train.epochs={p['epochs']}", "--set", f"train.max_hours={p['max_hours']}"]
-                for item in p["overrides"]:
-                    cmd += ["--set", item]
-                if self.device:
-                    cmd += ["--device", self.device]
                 print("solstice_sources fit:", " ".join(cmd), flush=True)
                 rc = subprocess.call(cmd, env=env, cwd=REPO_ROOT)
                 if rc != 0:
-                    raise RuntimeError(f"seed {seed} training failed (exit {rc})")
+                    raise RuntimeError(f"training of {out_dir.name} failed (exit {rc})")
         return build_bundle(runs, snapshot, out_root, mesh_store, p, self.device)
 
 

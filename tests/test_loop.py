@@ -92,3 +92,43 @@ def test_spool_teacher_and_cli(tmp_path, spec):
         status = cli("status")                                     # readers never wait on the writer
     assert busy.returncode == 2 and "another writer" in busy.stderr
     assert status.returncode == 0 and json.loads(status.stdout)["requests"] == {"open": 1}
+
+
+def test_acquired_roots_and_reload_file(tmp_path, spec):
+    """Events under acquired_roots are ingested as al_request (never val/test) and a promotion
+    writes the promoted bundle's path to the reload file."""
+    for i in range(14):
+        write_case(tmp_path / "seed", i, average=False)
+    for i in range(300, 306):
+        write_case(tmp_path / "fallback", i, average=False)
+    cfg = make_config(tmp_path, spec, acquired_roots=[tmp_path / "fallback"], reload_file=tmp_path / "reload")
+    with Catalog.writer(cfg.catalog_path) as cat:
+        loop = GlueLoop(cfg, cat)
+        out = loop.cycle()
+        rows = cat.query("SELECT origin, COUNT(*) AS n FROM events GROUP BY origin")
+        snap = Snapshot.open(cat.latest_snapshot()["path"])
+    origins = {r["origin"]: r["n"] for r in rows}
+    assert origins["al_request"] == 12 and origins["campaign"] == 28
+    assert out["ingest_acquired"]["added"] == 12
+    assert {e["split"] for e in snap.events() if e["origin"] == "al_request"} <= {"train", "acq_test"}
+    assert out["retrain"]["decision"] == "promoted"
+    assert (tmp_path / "reload").read_text() == str(Path(out["retrain"]["bundle_id"]).name) or \
+        (tmp_path / "reload").read_text().endswith(out["retrain"]["bundle_id"])
+
+
+def test_learner_warm_start_commands(tmp_path):
+    """Warm start builds one fine-tune command per bundle member with init_from and init_strict false."""
+    import json
+    from glue2.solstice_learner import SolsticeSourcesLearner
+    b = tmp_path / "bundle"
+    b.mkdir()
+    (b / "bundle.json").write_text(json.dumps({"members": ["member_0.pt", "member_1.pt"], "member_seeds": [0, 4]}))
+    snap = type("S", (), {"snapshot_id": "abc", "path": tmp_path / "snap"})()
+    lrn = SolsticeSourcesLearner(mesh_store="m.nc", warm_start=str(b), epochs=100, lr=3e-4, calib_splits=["val", "acq_test"])
+    cmds = lrn.training_commands(snap, tmp_path / "out")
+    assert len(cmds) == 2
+    out_dir, cmd = cmds[1]
+    assert out_dir.name == "member1"
+    assert f"train.init_from={b / 'member_1.pt'}" in cmd and "train.init_strict=false" in cmd
+    assert "seed=4" in cmd and "train.epochs=100" in cmd and "train.lr=0.0003" in cmd
+    assert lrn.params["calib_splits"] == ["val", "acq_test"]

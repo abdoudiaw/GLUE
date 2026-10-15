@@ -34,6 +34,9 @@ class LoopConfig:
     workdir: Path
     spec: SnapshotSpec
     ingest_roots: list[Path]
+    acquired_roots: list[Path] = field(default_factory=list)   # events of the loop's own fallback calls:
+                                                               # origin al_request, never val/test
+    reload_file: Path | None = None    # written with the promoted bundle's path (the service hot-swaps)
     learner: str = "pca_ridge"
     learner_params: dict = field(default_factory=dict)
     settle_seconds: float = 60.0
@@ -55,6 +58,9 @@ class LoopConfig:
         d["workdir"] = Path(d["workdir"])
         d["spec"] = SnapshotSpec.from_dict(d["spec"])
         d["ingest_roots"] = [Path(p) for p in d["ingest_roots"]]
+        d["acquired_roots"] = [Path(p) for p in d.get("acquired_roots") or []]
+        if d.get("reload_file"):
+            d["reload_file"] = Path(d["reload_file"])
         if "exclude" in d:
             d["exclude"] = tuple(d["exclude"])
         return cls(**d)
@@ -105,6 +111,10 @@ class GlueLoop:
                  json.dumps(metrics), now, now if decision == "promoted" else None))
         self.catalog.audit("retrain", bundle_id=bundle.bundle_id, snapshot_id=snap.snapshot_id,
                            decision=decision, reason=reason)
+        if decision == "promoted" and self.cfg.reload_file:
+            tmp = Path(str(self.cfg.reload_file) + ".tmp")
+            tmp.write_text(str(bundle.path))
+            tmp.replace(self.cfg.reload_file)
         return {"bundle_id": bundle.bundle_id, "snapshot_id": snap.snapshot_id,
                 "decision": decision, "reason": reason,
                 "n_train": snap.manifest["counts"]["train"], "test": metrics["test"]}
@@ -176,6 +186,11 @@ class GlueLoop:
                      exclude=self.cfg.exclude, max_new_cases=self.cfg.max_new_cases,
                      skip_dataless=self.cfg.skip_dataless)
         out = {"utc": utcnow(), "ingest": rep.as_dict()}
+        if self.cfg.acquired_roots:
+            acq = ingest(self.catalog, self.cfg.acquired_roots, origin="al_request",
+                         settle_seconds=self.cfg.settle_seconds, exclude=self.cfg.exclude,
+                         max_new_cases=self.cfg.max_new_cases, skip_dataless=self.cfg.skip_dataless)
+            out["ingest_acquired"] = acq.as_dict()
         new = self.new_eligible()
         if new and new >= self.cfg.retrain_min_new:
             try:

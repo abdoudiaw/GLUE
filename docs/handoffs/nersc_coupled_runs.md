@@ -65,17 +65,23 @@ Resume with `sbatch --export=ALL,START_STATE=<last state>`. Render with
 
 ## The retrain loop for the gated run (GPUs 1-3, same node, separate process)
 
-Not in the template; to be run alongside it (a small script in `campaigns/nersc/` is the next thing
-the Mac session writes, or write it here):
+`campaigns/nersc/retrain_loop.sh configs/nersc_coupling.yaml` (copy the example
+`configs/nersc_coupling.example.yaml`, set the bundle to warm-start from). One `glue2 cycle` every
+`INTERVAL` seconds (default 600):
 
-1. every N minutes: `glue2 ingest` of `$SCRATCH/eirene_nn/coupling/runs/gated/events/` with origin
-   `al_request` (events of acquired calls never enter val/test), `glue2 snapshot`;
-2. when `retrain_min_new` new events exist: fine-tune the current members (`train.init_from` each
-   member, `init_strict false`, 100 epochs, lr 3e-4) on GPUs 1-3 (`CUDA_VISIBLE_DEVICES=1,2,3`),
-   build the bundle with `--calib-splits val,acq_test`;
-3. promote only if the converged `test` split does not regress by more than 5 %
-   (`glue2.loop._promotion` has the rule); write the new bundle directory's path into
-   `$SCRATCH/eirene_nn/coupling/runs/gated/reload_bundle`; the service swaps at its next call.
+1. ingests `ingest_roots` as campaign events and `acquired_roots` (the run's `events/` directory
+   and the Dropbox transient cases) with origin `al_request`, so those cases only ever land in
+   `train` or `acq_test`;
+2. when `retrain_min_new` (50) new eligible events exist, freezes a snapshot and fine-tunes every
+   member of the `warm_start` bundle on it (`train.init_from` the member, `init_strict false`,
+   `epochs` 100, `lr` 3e-4, `CUDA_VISIBLE_DEVICES=1,2,3` from the script), builds the bundle with
+   `calib_splits: [val, acq_test]` and `fussiness` 1.75;
+3. promotes it only if neither the converged `test` split nor `acq_test` regresses by more than
+   `promote_tolerance` and one improves (`glue2.loop._promotion`), and then writes the bundle path to
+   `reload_file`; the service (started with `--reload-file` on that path) swaps at its next call.
+
+Stop it with a file named `STOP` next to the reload file. Everything it writes goes under the
+GLUE2 workdir (`snapshots/`, `bundles/`, `bundles/.runs/<snapshot>/member<k>/`).
 
 ## What comes back to the Mac
 
