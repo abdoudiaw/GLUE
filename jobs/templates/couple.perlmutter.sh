@@ -43,6 +43,13 @@ CUDA_VISIBLE_DEVICES=0 python -m glue2.surrogate_service --bundle ${bundle} --ru
    --keep-requests $OUT/requests --keep-every ${keep_every} ${service_args} > $OUT/service.out 2>&1 &
 SVC=$!
 sleep ${service_warmup}
+# the retrain loop (gated run): a separate process on GPUs 1-3, one glue2 cycle every retrain_interval s
+RL=""
+if [ -n "${retrain_config}" ]; then
+  INTERVAL=${retrain_interval} RETRAIN_GPUS=1,2,3 GLUE_ROOT=${glue_root} \
+    nohup bash ${glue_root}/campaigns/nersc/retrain_loop.sh ${retrain_config} > $OUT/retrain_loop.log 2>&1 &
+  RL=$!
+fi
 
 step=$(basename $START | sed 's/.*step0*//; s/[^0-9].*//')
 [ -z "$step" ] && step=50
@@ -73,9 +80,10 @@ for i in $(seq 1 $NSEG); do
     mv eirene_training_v3_*.nc b2mn.exe.dir/eirene_training_v3_*.nc $OUT/events/ 2>/dev/null
     [ -f b2mn.exe.dir/eirene_surrogate_decisions.log ] && cat b2mn.exe.dir/eirene_surrogate_decisions.log >> $OUT/decisions.log
   else
-    echo "segment to step $s FAILED; stopping"; kill $SVC; exit 3
+    echo "segment to step $s FAILED; stopping"; kill $SVC; [ -n "$RL" ] && { touch $OUT/STOP; kill $RL; }; exit 3
   fi
   step=$s; prev_state=$OUT/states/state_$tag
 done
 kill $SVC 2>/dev/null
+[ -n "$RL" ] && { touch $OUT/STOP; kill $RL 2>/dev/null; }
 echo "=== $NAME done $(date): states $(ls $OUT/states | grep -c state_)"

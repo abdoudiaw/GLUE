@@ -12,3 +12,5 @@ params:
   bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-2942df28b850
   service_args: "--gate-kinds sni,smo,see,sei --skip-targets 'wneutrals_*'"
   keep_every: 10
+  retrain_config: /pscratch/sd/d/diawa/GLUE/configs/nersc_coupling.yaml   # the retrain loop beside the run (GPUs 1-3)
+  retrain_interval: 600
