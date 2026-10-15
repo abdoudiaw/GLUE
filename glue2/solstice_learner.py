@@ -30,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -384,15 +385,20 @@ class SolsticeSourcesLearner:
                  mesh_store: str | None = None, library_src: str = "external/solstice/src",
                  fussiness: float = 1.5, novelty_max: float = 1.0, knn: int = 5,
                  device: str | None = None, runs: list[str] | None = None, overrides: list[str] | None = None,
-                 warm_start: str | None = None, calib_splits: list[str] | None = None, lr: float | None = None):
+                 warm_start: str | None = None, calib_splits: list[str] | None = None, lr: float | None = None,
+                 train_jobs: int = 1, train_devices: list[str] | None = None, train_prefix: str = ""):
         """warm_start: a bundle directory whose members are fine-tuned (one run per member,
         `train.init_from` = that member, `init_strict` false so a new head starts fresh) instead
         of training `members` seeds from scratch; calib_splits: splits the error bar is calibrated
-        on (default val); lr: learning rate override (fine-tunes use a lower one)."""
+        on (default val); lr: learning rate override (fine-tunes use a lower one); train_jobs: members
+        trained concurrently, each on the next of train_devices (e.g. ["cuda:1", "cuda:2", "cuda:3"]);
+        train_prefix: launcher words put before each trainer command (e.g. an srun step onto the node
+        that runs the coupled case, so the retrain uses its idle GPUs)."""
         self.params = dict(members=members, epochs=epochs, max_hours=max_hours, train_config=train_config,
                            mesh_store=mesh_store, library_src=library_src, fussiness=fussiness,
                            novelty_max=novelty_max, knn=knn, overrides=list(overrides or []),
-                           warm_start=warm_start, calib_splits=list(calib_splits) if calib_splits else None, lr=lr)
+                           warm_start=warm_start, calib_splits=list(calib_splits) if calib_splits else None, lr=lr,
+                           train_jobs=int(train_jobs), train_devices=list(train_devices or []), train_prefix=train_prefix)
         self.device, self.runs = device, runs
 
     def training_commands(self, snapshot: Snapshot, out_root: str | Path) -> list[tuple[Path, list[str]]]:
@@ -433,14 +439,36 @@ class SolsticeSourcesLearner:
             lib_src = REPO_ROOT / p["library_src"]
             env = dict(os.environ)
             env["PYTHONPATH"] = os.pathsep.join([str(lib_src), str(REPO_ROOT), env.get("PYTHONPATH", "")])
-            for out_dir, cmd in self.training_commands(snapshot, out_root):
+            jobs = max(1, int(p.get("train_jobs") or 1))
+            devices = list(p.get("train_devices") or [])
+            prefix = shlex.split(p.get("train_prefix") or "")
+            running: list[tuple[Path, subprocess.Popen]] = []
+
+            def reap(block: bool) -> None:
+                while running and (block or len(running) >= jobs):
+                    out_dir, proc = running[0]
+                    rc = proc.wait()
+                    running.pop(0)
+                    if rc != 0:
+                        for _, other in running:
+                            other.kill()
+                        raise RuntimeError(f"training of {out_dir.name} failed (exit {rc})")
+
+            for k, (out_dir, cmd) in enumerate(self.training_commands(snapshot, out_root)):
                 runs.append(out_dir)
                 if (out_dir / "metrics.json").exists():
                     continue
-                print("solstice_sources fit:", " ".join(cmd), flush=True)
-                rc = subprocess.call(cmd, env=env, cwd=REPO_ROOT)
-                if rc != 0:
-                    raise RuntimeError(f"training of {out_dir.name} failed (exit {rc})")
+                if devices:
+                    dev = devices[k % len(devices)]
+                    cmd = [c for c in cmd]
+                    if "--device" in cmd:
+                        cmd[cmd.index("--device") + 1] = dev
+                    else:
+                        cmd += ["--device", dev]
+                reap(block=False)
+                print("solstice_sources fit:", " ".join(prefix + cmd), flush=True)
+                running.append((out_dir, subprocess.Popen(prefix + cmd, env=env, cwd=REPO_ROOT)))
+            reap(block=True)
         return build_bundle(runs, snapshot, out_root, mesh_store, p, self.device)
 
 

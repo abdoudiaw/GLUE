@@ -39,6 +39,9 @@ learner_params:
   novelty_max: 1.0
   knn: 5
   device: cuda
+  train_jobs: 3                   # members fine-tuned concurrently ...
+  train_devices: [cuda:1, cuda:2, cuda:3]   # ... on the coupled node's idle GPUs (the service holds GPU 0) ...
+  train_prefix: "srun -N 1 -n 1 -c 8 --overlap --gpus-per-node=4"   # ... as job steps of the run's allocation
 retrain_min_new: 50                # fallback events per retrain
 promote_tolerance: 0.05
 batch_size: 0
