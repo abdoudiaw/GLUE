@@ -14,6 +14,8 @@
 #SBATCH -C ${constraint}
 #SBATCH -q ${qos}
 #SBATCH -N 1
+#SBATCH --ntasks-per-node=${mpi_ranks}
+#SBATCH --cpus-per-task=2
 #SBATCH --gpus-per-node=4
 #SBATCH -t ${walltime}
 #SBATCH -J ${name}
@@ -26,7 +28,9 @@ START=${START_STATE:-${start_state}}
 NSEG=${nseg}; SEG=${seg_steps}; DT=${dt}
 mkdir -p $OUT/states $OUT/events $OUT/segments $OUT/requests ${coupling_root}/runs/logs $WORK
 cd ${solps_tree}
+set +u    # the SOLPS setup references unset variables
 ${launch_env_bash}
+set -u
 cd $WORK
 module load ${pytorch_module}
 source ${venv}/bin/activate

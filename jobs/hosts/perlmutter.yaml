@@ -6,7 +6,7 @@ ssh: perlmutter.nersc.gov
 glue_root: /pscratch/sd/d/diawa/GLUE
 data_root: /pscratch/sd/d/diawa/eirene_nn
 coupling_root: /pscratch/sd/d/diawa/eirene_nn/coupling     # template_chi1/, baserun/, states/, runs/
-solps_tree: /pscratch/sd/d/diawa/solps/solps-iter-eirene-training-dump   # [NERSC session: set to its build]
+solps_tree: /pscratch/sd/d/diawa/solps/solps-iter-eirene-training-dump   # fork 9777b64c, B2.5 2fea8974b, host NERSC.gfortran
 venv: /pscratch/sd/d/diawa/venvs/solstice
 pytorch_module: pytorch/2.13.0
 account: m5186
@@ -17,6 +17,5 @@ omp_threads: 8           # the service's CPU threads (its model runs on GPU 0)
 exchange_dir: /dev/shm/eirene_surrogate   # request/answer files on node-local storage, never Lustre
 # [NERSC session: the lines that make b2run/mpirun work on Perlmutter for this build]
 launch_env_bash: |
-  module load cray-hdf5 cray-netcdf
   export SOLPS_HOST_NAME_FORCE=NERSC
-  source setup.sh gfortran 2>/dev/null || source setup.csh gfortran
+  source setup.ksh gfortran > /dev/null 2>&1   # SETUP/setup.ksh.NERSC.gfortran: cray-hdf5/netcdf, MSCL in lib/NERSC.gfortran
