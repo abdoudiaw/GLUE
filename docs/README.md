@@ -9,3 +9,8 @@
   `2026-10-06_mora_training_dump.md` records the Mora build/run recipes and the flat-start pitfall.
 
 How to run things is in the top-level README and in `jobs/` (one spec per workflow stage).
+
+Notebooks (`notebooks/`): `eirene_dump_explorer` (event files), `fort31_explorer` (legacy background
+record), `hero_reference_run` + `hero_tools.py` (the reference SOLPS-ITER run: convergence, wall time,
+final-state maps, checkpoint-to-checkpoint change; data expected under
+`~/data/eirene_nn/reference_uniform_dt1e-5/`, mesh geometry from the SOLSTICE mesh store).
