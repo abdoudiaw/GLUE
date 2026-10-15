@@ -94,6 +94,7 @@ for i in $(seq 1 $NSEG); do
     mv eirene_training_v3_*.nc b2mn.exe.dir/eirene_training_v3_*.nc $OUT/events/ 2>/dev/null
     [ -f b2mn.exe.dir/eirene_surrogate_decisions.log ] && cat b2mn.exe.dir/eirene_surrogate_decisions.log >> $OUT/decisions.log
   else
+    cp -p run.log $OUT/segments/run_${tag}_FAILED.log 2>/dev/null; cp -p b2mn.exe.dir/eirene_surrogate_decisions.log $OUT/segments/decisions_${tag}_FAILED.log 2>/dev/null
     echo "segment to step $s FAILED; stopping"; kill $SVC; [ -n "$RL" ] && { touch $OUT/STOP; kill $RL; }; exit 3
   fi
   step=$s; prev_state=$OUT/states/state_$tag
