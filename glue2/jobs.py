@@ -101,6 +101,8 @@ def variables(spec: dict, host: dict) -> dict:
     for key in ("launch_env_tcsh", "launch_env_bash"):
         if key in v:
             v[key] = str(v[key]).rstrip("\n")
+    if spec["stage"] == "couple":    # the service takes the policy as a flag
+        v["policy_flag"] = {"always": "--always", "never": "--never"}.get(str(v.get("policy", "gate")), "")
     if "b2run_line" in v:          # the launch line may name the rank count
         v["b2run_line"] = str(v["b2run_line"]).replace("${mpi_ranks}", str(v.get("mpi_ranks", "")))
     return {k: "" if val is None else str(val) for k, val in v.items()}

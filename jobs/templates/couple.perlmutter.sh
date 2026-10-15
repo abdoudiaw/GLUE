@@ -53,7 +53,7 @@ echo "bundle: $BUNDLE"
 mkdir -p $WORK/case/b2mn.exe.dir
 CUDA_VISIBLE_DEVICES=0 python -m glue2.surrogate_service --bundle $BUNDLE --run-dir $WORK/case/b2mn.exe.dir \
    --device cuda --log $OUT/service.jsonl --reload-file $OUT/reload_bundle \
-   --keep-requests $OUT/requests --keep-every ${keep_every} ${service_args} > $OUT/service.out 2>&1 &
+   --keep-requests $OUT/requests --keep-every ${keep_every} ${policy_flag} ${service_args} > $OUT/service.out 2>&1 &
 SVC=$!
 sleep ${service_warmup}
 # the retrain loop (gated run): a separate process on GPUs 1-3, one glue2 cycle every retrain_interval s
@@ -94,7 +94,7 @@ for i in $(seq 1 $NSEG); do
     mv eirene_training_v3_*.nc b2mn.exe.dir/eirene_training_v3_*.nc $OUT/events/ 2>/dev/null
     [ -f b2mn.exe.dir/eirene_surrogate_decisions.log ] && cat b2mn.exe.dir/eirene_surrogate_decisions.log >> $OUT/decisions.log
   else
-    cp -p run.log $OUT/segments/run_${tag}_FAILED.log 2>/dev/null; cp -p b2mn.exe.dir/eirene_surrogate_decisions.log $OUT/segments/decisions_${tag}_FAILED.log 2>/dev/null
+    cp -p run.log $OUT/segments/run_$tag.FAILED.log 2>/dev/null; cp -p b2mn.exe.dir/eirene_surrogate_decisions.log $OUT/segments/decisions_$tag.FAILED.log 2>/dev/null
     echo "segment to step $s FAILED; stopping"; kill $SVC; [ -n "$RL" ] && { touch $OUT/STOP; kill $RL; }; exit 3
   fi
   step=$s; prev_state=$OUT/states/state_$tag
