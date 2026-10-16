@@ -45,5 +45,6 @@ learner_params:
   train_prefix: ""                # the loop itself runs as a step on the node (retrain_prefix): plain processes
 retrain_min_new: 50                # fallback events per retrain
 promote_tolerance: 0.05
+promote_require_improvement: false   # the run's own anchored events are in train, so a model better on this trajectory need not improve the held-out splits; promote when neither regresses beyond the tolerance
 batch_size: 0
 max_open_requests: 0
