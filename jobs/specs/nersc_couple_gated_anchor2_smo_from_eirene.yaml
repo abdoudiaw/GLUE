@@ -1,0 +1,18 @@
+# Culprit test: EIRENE forced every 3rd call (anchor 2); the momentum source eirbra_smo is always kept from the
+# request (= B2.5's latest EIRENE smo, at most 2 steps old) while sni/see/sei come from the surrogate (run-3 model,
+# frozen). If this tracks the reference where gated runs did not, the smo prediction is the driver.
+host: perlmutter
+name: gated_anchor2_smo_from_eirene
+params:
+  bundle: /pscratch/sd/d/diawa/eirene_nn/glue2_work/diiid_eirene_v3/bundles/solstice_sources-41c6d56fe16d
+  dump: 1
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  keep_every: 10
+  nseg: 4
+  policy: gate
+  replay: 3
+  service_args: --gate-kinds sni,see,sei --skip-targets 'wneutrals_*,eirbra_smo' --max-consecutive
+    2
+  service_prefix: srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstate_step00050
+stage: couple
