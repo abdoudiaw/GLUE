@@ -12,6 +12,7 @@ PY
 )
 cd ${GLUE_ROOT:-$SCRATCH/GLUE}
 export PYTHONPATH=$PWD:$PWD/external/solstice/src CUDA_VISIBLE_DEVICES=${RETRAIN_GPUS:-1,2,3}
+export HDF5_USE_FILE_LOCKING=FALSE   # concurrent trainers open the same snapshot file on Lustre
 while [ ! -e "$RUN_DIR/STOP" ]; do
   echo "=== cycle $(date)"
   python -m glue2.cli --config "$CONFIG" cycle > "$RUN_DIR/retrain_cycle_$(date +%Y%m%d_%H%M%S).log" 2>&1; rc=$?

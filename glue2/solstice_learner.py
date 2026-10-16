@@ -439,6 +439,7 @@ class SolsticeSourcesLearner:
             lib_src = REPO_ROOT / p["library_src"]
             env = dict(os.environ)
             env["PYTHONPATH"] = os.pathsep.join([str(lib_src), str(REPO_ROOT), env.get("PYTHONPATH", "")])
+            env.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")   # several trainers read the same snapshot on Lustre
             jobs = max(1, int(p.get("train_jobs") or 1))
             devices = list(p.get("train_devices") or [])
             prefix = shlex.split(p.get("train_prefix") or "")
