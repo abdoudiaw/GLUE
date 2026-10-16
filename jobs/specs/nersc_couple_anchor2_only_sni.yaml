@@ -1,0 +1,16 @@
+# One-source-at-a-time test: only the particle source from the surrogate; momentum and energy sources from EIRENE (<=2 steps old). EIRENE forced every 3rd call, frozen run-3 model, uniform start, 3 segments.
+host: perlmutter
+name: anchor2_only_sni
+params:
+  bundle: /pscratch/sd/d/diawa/eirene_nn/glue2_work/diiid_eirene_v3/bundles/solstice_sources-41c6d56fe16d
+  dump: 1
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  keep_every: 10
+  nseg: 3
+  policy: gate
+  replay: 3
+  service_args: --gate-kinds sni --skip-targets 'wneutrals_*,eirbra_smo,eirbra_see,eirbra_sei'
+    --max-consecutive 2
+  service_prefix: srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstate_step00050
+stage: couple
