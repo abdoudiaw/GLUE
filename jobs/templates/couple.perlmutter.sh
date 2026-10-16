@@ -74,7 +74,7 @@ if [ -n "${retrain_config}" ]; then
   RL=$!
 fi
 
-step=$(basename $START | sed 's/.*step0*//; s/[^0-9].*//')
+step=$(basename $START | sed 's/.*step0*//; s/.*state_0*//; s/[^0-9].*//')   # ..._stepNNNNN or state_NNNNN names carry the step
 [ -z "$step" ] && step=50
 prev_state=$START
 echo "=== $NAME start $(date): from $START (step $step), $NSEG x $SEG steps"
