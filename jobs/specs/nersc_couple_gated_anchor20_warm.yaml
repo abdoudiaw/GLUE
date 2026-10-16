@@ -1,10 +1,10 @@
-# Warm-up row: gated surrogate + anchor every 20 + retraining, starting from the 5000-step EIRENE warm-up
-# state (eirene_warmup5000); the warm-up's dumped events are in the retrain loop's acquired roots.
+# Warm-up row: gated surrogate + anchor every 20 + retraining from the 5000-step EIRENE warm-up state
+# (eirene_warmup_a 4000 steps, eirene_warmup_b 1000 steps with dumping); warm-up events feed the retrain loop.
 name: gated_anchor20_warm
 stage: couple
 host: perlmutter
 params:
-  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/eirene_warmup5000/states/state_05050
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/eirene_warmup_b/states/state_05050
   replay: 3
   dump: 1
   policy: gate

@@ -1,0 +1,16 @@
+# Warm-up row, part b: 1000 more plain EIRENE steps WITH event dumping (steps 4050-5050), so the
+# retrain loop gets ~1000 EIRENE-truth events from the regime right before the hand-off.
+host: perlmutter
+name: eirene_warmup_b
+params:
+  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-2942df28b850
+  dump: 1
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  keep_every: 0
+  nseg: 1
+  policy: never
+  replay: 0
+  service_args: --skip-targets 'wneutrals_*'
+  service_prefix: srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/eirene_warmup_a/states/state_04050
+stage: couple

@@ -8,7 +8,7 @@ ingest_roots:                      # the converged campaign (already in the cata
 acquired_roots:                    # the gated run's fallback calls (origin al_request: train / acq_test only)
   - /pscratch/sd/d/diawa/eirene_nn/transient_events
   - /pscratch/sd/d/diawa/eirene_nn/coupling/runs/gated/events
-  - /pscratch/sd/d/diawa/eirene_nn/coupling/runs/eirene_warmup5000/events
+  - /pscratch/sd/d/diawa/eirene_nn/coupling/runs/eirene_warmup_b/events
   - /pscratch/sd/d/diawa/eirene_nn/coupling/runs/gated_anchor20_warm/events
 reload_file: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/gated_anchor20_warm/reload_bundle
 settle_seconds: 30
