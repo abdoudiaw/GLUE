@@ -1,0 +1,17 @@
+# Continuation of eirene_uniform_dump without dumping to step 15 050: the Perlmutter reference trajectory
+# (states and b2time every 1000 steps) for the comparison notebook.
+host: perlmutter
+name: eirene_uniform_cont
+params:
+  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-2942df28b850
+  dump: 0
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  keep_every: 0
+  nseg: 7
+  policy: never
+  replay: 0
+  seg_steps: 1000
+  service_args: --skip-targets 'wneutrals_*'
+  service_prefix: srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/eirene_uniform_dump/states/state_08050
+stage: couple

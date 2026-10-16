@@ -1,0 +1,17 @@
+# Training-data run: the hero case (plain B2.5-EIRENE, uniform step-50 start) re-run on Perlmutter with event
+# dumping ON for the first 8000 steps (the transient); every EIRENE call becomes a training event.
+host: perlmutter
+name: eirene_uniform_dump
+params:
+  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-2942df28b850
+  dump: 1
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  keep_every: 0
+  nseg: 8
+  policy: never
+  replay: 0
+  seg_steps: 1000
+  service_args: --skip-targets 'wneutrals_*'
+  service_prefix: srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstate_step00050
+stage: couple

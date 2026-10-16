@@ -1,0 +1,16 @@
+# Training-data run: plain B2.5-EIRENE from the NN v2 initial state with event dumping ON, 10 000 steps:
+# a second EIRENE-driven transient for the surrogate's training set.
+name: eirene_nn_v2_dump
+stage: couple
+host: perlmutter
+params:
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstati.nn_v2
+  replay: 0
+  dump: 1
+  policy: never
+  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-2942df28b850
+  service_args: --skip-targets 'wneutrals_*'
+  keep_every: 0
+  nseg: 10
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  service_prefix: srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1
