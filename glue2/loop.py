@@ -46,7 +46,8 @@ class LoopConfig:
     retrain_min_new: int = 1           # new eligible events that trigger retraining
     batch_size: int = 4                # requests per cycle
     max_open_requests: int = 16
-    promote_tolerance: float = 0.05    # allowed relative regression per held-out split
+    promote_tolerance: float = 0.05
+    promote_require_improvement: bool = True   # False: promote whenever no split regresses beyond the tolerance    # allowed relative regression per held-out split
 
     @property
     def catalog_path(self) -> Path:
@@ -121,7 +122,8 @@ class GlueLoop:
 
     def _promotion(self, metrics: dict) -> tuple[str, str]:
         """Promote when the seed test split does not regress beyond the tolerance,
-        the acquired hold-out does not regress either, and at least one improves."""
+        the acquired hold-out does not regress either, and (unless promote_require_improvement
+        is false) at least one improves."""
         tol = self.cfg.promote_tolerance
         if metrics["test"]["n"] == 0:
             return "rejected", "empty test split"
@@ -134,7 +136,8 @@ class GlueLoop:
             improved |= cand["rel_l2"] < inc["rel_l2"]
             parts.append(f"{split} {cand['rel_l2']:.4g} vs {inc['rel_l2']:.4g}")
         reason = "; ".join(parts) + f" (tolerance {tol:g})"
-        return ("promoted" if all(verdicts) and improved else "rejected"), reason
+        ok = all(verdicts) and (improved or not self.cfg.promote_require_improvement)
+        return ("promoted" if ok else "rejected"), reason
 
     # ----------------------------------------------------------------- acquire
 
