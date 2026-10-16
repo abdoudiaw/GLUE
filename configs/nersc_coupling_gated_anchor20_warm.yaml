@@ -42,7 +42,7 @@ learner_params:
   knn: 5
   device: cuda
   train_jobs: 3                   # members fine-tuned concurrently ...
-  train_devices: [cuda:1, cuda:2, cuda:3]   # ... on the coupled node's idle GPUs (the service holds GPU 0) ...
+  train_devices: [cuda:0, cuda:1, cuda:2]   # indices WITHIN CUDA_VISIBLE_DEVICES=1,2,3 set by retrain_loop.sh (physical GPUs 1-3)
   train_prefix: ""                # the loop itself runs as a step on the node (retrain_prefix): plain processes
 retrain_min_new: 50                # fallback events per retrain
 promote_tolerance: 0.05
