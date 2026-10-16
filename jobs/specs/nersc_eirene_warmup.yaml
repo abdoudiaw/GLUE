@@ -1,7 +1,7 @@
-# Warm-up row, part b: 1000 more plain EIRENE steps WITH event dumping (steps 1050-2050): ~1000 EIRENE-truth
-# events from the regime where the surrogate drifted in run 3, for the retrain loop.
+# Warm-up row: 100 plain B2.5-EIRENE steps (replay 0, dump 1) from the uniform step-50 state; the anchored
+# gated run gated_anchor20_warm starts from its state (step 150). Warm-up length is a parameter to revisit.
 host: perlmutter
-name: eirene_warmup_b
+name: eirene_warmup
 params:
   bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-2942df28b850
   dump: 1
@@ -12,5 +12,6 @@ params:
   replay: 0
   service_args: --skip-targets 'wneutrals_*'
   service_prefix: srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1
-  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/eirene_warmup_a/states/state_01050
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstate_step00050
+  seg_steps: 100
 stage: couple

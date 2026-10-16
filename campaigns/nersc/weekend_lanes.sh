@@ -6,7 +6,7 @@ set -u
 cd ${GLUE_ROOT:-$SCRATCH/GLUE}
 LOGS=/pscratch/sd/d/diawa/eirene_nn/coupling/runs/logs
 LANE_A="gated_anchor20:15 gated_anchor50:15 gated_f10:15 gated_nn_v2_anchor20:10"
-LANE_B="gated_anchor20_noretrain:15 eirene_warmup_a:1 eirene_warmup_b:1 gated_anchor20_warm:13 surrogate_only_anchor20:15"
+LANE_B="gated_anchor20_noretrain:15 eirene_warmup:1 gated_anchor20_warm:15 surrogate_only_anchor20:15"
 lane() { tag=$1; shift; for r in "$@"; do echo "$(date): lane $tag starts ${r%%:*}"; NSEG=${r##*:} bash campaigns/nersc/couple_chunks.sh ${r%%:*} > $LOGS/chunks-${r%%:*}.out 2>&1; echo "$(date): lane $tag finished ${r%%:*}"; done; }
 lane A $LANE_A & lane B $LANE_B &
 wait; echo "$(date): all lanes done; copying states and logs to Dropbox"
