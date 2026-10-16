@@ -1,0 +1,21 @@
+# Warm-up row: gated surrogate + anchor every 20 + retraining, starting from the 5000-step EIRENE warm-up
+# state (eirene_warmup5000); the warm-up's dumped events are in the retrain loop's acquired roots.
+name: gated_anchor20_warm
+stage: couple
+host: perlmutter
+params:
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/eirene_warmup5000/states/state_05050
+  replay: 3
+  dump: 1
+  policy: gate
+  bundle: /pscratch/sd/d/diawa/eirene_nn/glue2_work/diiid_eirene_v3/bundles/solstice_sources-41c6d56fe16d
+  service_args: --gate-kinds sni,smo,see,sei --skip-targets 'wneutrals_*' --max-consecutive
+    20
+  keep_every: 10
+  retrain_config: /pscratch/sd/d/diawa/GLUE/configs/nersc_coupling_gated_anchor20_warm.yaml
+  retrain_interval: 600
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  service_prefix: srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1
+  retrain_gpus: 1,2,3
+  nseg: 10
+  retrain_prefix: srun -N 1 -n 1 -c 8 --overlap --gpus-per-node=4
