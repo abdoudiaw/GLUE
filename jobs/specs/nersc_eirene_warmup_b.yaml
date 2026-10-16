@@ -1,5 +1,5 @@
-# Warm-up row, part b: 1000 more plain EIRENE steps WITH event dumping (steps 4050-5050), so the
-# retrain loop gets ~1000 EIRENE-truth events from the regime right before the hand-off.
+# Warm-up row, part b: 1000 more plain EIRENE steps WITH event dumping (steps 1050-2050): ~1000 EIRENE-truth
+# events from the regime where the surrogate drifted in run 3, for the retrain loop.
 host: perlmutter
 name: eirene_warmup_b
 params:
@@ -12,5 +12,5 @@ params:
   replay: 0
   service_args: --skip-targets 'wneutrals_*'
   service_prefix: srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1
-  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/eirene_warmup_a/states/state_04050
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/eirene_warmup_a/states/state_01050
 stage: couple

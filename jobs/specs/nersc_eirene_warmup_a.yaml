@@ -1,4 +1,4 @@
-# Warm-up row, part a: 4000 plain B2.5-EIRENE steps (replay 0, dump 0) from the uniform step-50 state.
+# Warm-up row, part a: 1000 plain B2.5-EIRENE steps (replay 0, dump 0) from the uniform step-50 state.
 host: perlmutter
 name: eirene_warmup_a
 params:
@@ -6,7 +6,7 @@ params:
   dump: 0
   exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
   keep_every: 0
-  nseg: 4
+  nseg: 1
   policy: never
   replay: 0
   service_args: --skip-targets 'wneutrals_*'
