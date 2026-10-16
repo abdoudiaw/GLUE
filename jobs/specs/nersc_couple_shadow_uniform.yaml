@@ -1,0 +1,17 @@
+# Diagnostic shadow run: EIRENE answers every call (policy never), the surrogate (run-3 model 41c6d56fe16d) only
+# scores each call; every call is dumped as an event and every request kept, so the surrogate's error along the TRUE
+# trajectory can be computed step by step offline. Uniform step-50 start, 3 segments.
+host: perlmutter
+name: shadow_uniform
+params:
+  bundle: /pscratch/sd/d/diawa/eirene_nn/glue2_work/diiid_eirene_v3/bundles/solstice_sources-41c6d56fe16d
+  dump: 1
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  keep_every: 1
+  nseg: 3
+  policy: never
+  replay: 3
+  service_args: --gate-kinds sni,smo,see,sei --skip-targets 'wneutrals_*'
+  service_prefix: srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstate_step00050
+stage: couple
