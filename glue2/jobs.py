@@ -51,7 +51,7 @@ STAGE_DEFAULTS = {
     "train": {"commands": [], "submit_hint": "sbatch campaigns/nersc/train_eirene_sources.sbatch"},
 }
 # couple on perlmutter: the same keys plus the segment chain and the Slurm/launch pieces
-STAGE_DEFAULTS["couple"].update({"nseg": 15, "seg_steps": 1000, "walltime": "12:00:00", "retrain_config": "", "retrain_interval": 600, "retrain_gpus": "1,2,3", "service_prefix": "",
+STAGE_DEFAULTS["couple"].update({"nseg": 15, "seg_steps": 1000, "walltime": "12:00:00", "retrain_config": "", "retrain_interval": 600, "retrain_gpus": "1,2,3", "retrain_prefix": "", "service_prefix": "",
                                  "start_state": None,
                                  "b2run_line": "b2run -m \\\"srun -n ${mpi_ranks} -c 2 --overlap --cpu-bind=cores\\\" b2mn >& run.log   # Perlmutter, validated 2026-10-15 (b2run is csh: the launcher words carry literal quotes)"})
 EXT = {"build": "csh", "campaign": "sh", "couple": "sh", "train": "sh"}

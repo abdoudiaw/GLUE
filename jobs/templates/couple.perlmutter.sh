@@ -70,7 +70,7 @@ RL=""
 if [ -n "${retrain_config}" ]; then
   rm -f $OUT/STOP    # left by a previous chunk of this run
   INTERVAL=${retrain_interval} RETRAIN_GPUS=${retrain_gpus} GLUE_ROOT=${glue_root} \
-    nohup bash ${glue_root}/campaigns/nersc/retrain_loop.sh ${retrain_config} > $OUT/retrain_loop.log 2>&1 &
+    nohup ${retrain_prefix} bash ${glue_root}/campaigns/nersc/retrain_loop.sh ${retrain_config} > $OUT/retrain_loop.log 2>&1 &
   RL=$!
 fi
 

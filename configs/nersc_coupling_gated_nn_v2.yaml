@@ -30,7 +30,7 @@ spec:
 
 learner: solstice_sources
 learner_params:
-  warm_start: "[BUNDLE]"   # filled by campaigns/nersc/launch_with_promoted.sh with the promoted bundle
+  warm_start: /pscratch/sd/d/diawa/eirene_nn/glue2_work/diiid_eirene_v3/bundles/solstice_sources-41c6d56fe16d   # filled by campaigns/nersc/launch_with_promoted.sh with the promoted bundle
   epochs: 30
   lr: 3.0e-4
   max_hours: 1.0
@@ -42,7 +42,7 @@ learner_params:
   device: cuda
   train_jobs: 3                   # members fine-tuned concurrently ...
   train_devices: [cuda:1, cuda:2, cuda:3]   # ... on the coupled node's idle GPUs (the service holds GPU 0) ...
-  train_prefix: "srun -N 1 -n 1 -c 8 --overlap --gpus-per-node=4"   # ... as job steps of the run's allocation
+  train_prefix: ""                # the loop itself runs as a step on the node (retrain_prefix): plain processes
 retrain_min_new: 50                # fallback events per retrain
 promote_tolerance: 0.05
 batch_size: 0

@@ -1,5 +1,6 @@
 # Run 4b: gated surrogate with online retraining from the NN v2 initial state, starting from the bundle
 # the gated run (run 3) promoted last. [BUNDLE] is filled in by campaigns/nersc/launch_with_promoted.sh.
+# Interactive route: service and retrain loop are job steps on the allocated node (GPU 0 / GPUs 1-3).
 name: gated_nn_v2
 stage: couple
 host: perlmutter
@@ -8,12 +9,13 @@ params:
   replay: 3
   dump: 1
   policy: gate
-  bundle: "[BUNDLE]"
-  service_args: "--gate-kinds sni,smo,see,sei --skip-targets 'wneutrals_*'"
+  bundle: '[BUNDLE]'
+  service_args: --gate-kinds sni,smo,see,sei --skip-targets 'wneutrals_*'
   keep_every: 10
   nseg: 10
   retrain_config: /pscratch/sd/d/diawa/GLUE/configs/nersc_coupling_gated_nn_v2.yaml
   retrain_interval: 600
-  retrain_gpus: "0"
+  retrain_gpus: 1,2,3
   exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
-  service_prefix: "srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1"
+  service_prefix: srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1
+  retrain_prefix: srun -N 1 -n 1 -c 8 --overlap --gpus-per-node=4
