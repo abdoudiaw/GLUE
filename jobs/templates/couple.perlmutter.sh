@@ -98,7 +98,7 @@ for i in $(seq 1 $NSEG); do
   echo "segment to step $s: $((t1-t0)) s, ITER lines $it, b2fstate $(stat -c %s b2fstate 2>/dev/null || echo 0) bytes  $(date)"
   grep -iE "supra|xerrab|no answer" run.log | head -2
   if [ -s b2fstate ] && [ "$(stat -c %s b2fstate)" -gt 1000000 ]; then
-    cp -p b2fstate $OUT/states/state_$tag; cp -p b2time.nc $OUT/states/b2time_$tag.nc 2>/dev/null
+    cp -p b2fstate $OUT/states/state_$tag; cp -p b2time.nc $OUT/states/b2time_$tag.nc 2>/dev/null; cp -p b2tallies.nc $OUT/states/b2tallies_$tag.nc 2>/dev/null
     cp -p run.log $OUT/segments/run_$tag.log
     mv eirene_training_v3_*.nc b2mn.exe.dir/eirene_training_v3_*.nc $OUT/events/ 2>/dev/null
     [ -f b2mn.exe.dir/eirene_surrogate_decisions.log ] && cat b2mn.exe.dir/eirene_surrogate_decisions.log >> $OUT/decisions.log

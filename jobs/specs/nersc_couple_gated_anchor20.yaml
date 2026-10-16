@@ -1,0 +1,22 @@
+# Anchored variant: gated surrogate + online retraining, with an EIRENE call forced after every 20
+# consecutive surrogate answers (--max-consecutive 20), so truth is acquired along the whole trajectory.
+# Start: b2fstate_step00050; initial bundle: run 3's final promoted bundle 41c6d56fe16d.
+name: gated_anchor20
+stage: couple
+host: perlmutter
+params:
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstate_step00050
+  replay: 3
+  dump: 1
+  policy: gate
+  bundle: /pscratch/sd/d/diawa/eirene_nn/glue2_work/diiid_eirene_v3/bundles/solstice_sources-41c6d56fe16d
+  service_args: --gate-kinds sni,smo,see,sei --skip-targets 'wneutrals_*' --max-consecutive
+    20
+  keep_every: 10
+  retrain_config: /pscratch/sd/d/diawa/GLUE/configs/nersc_coupling_gated_anchor20.yaml
+  retrain_interval: 600
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  service_prefix: srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1
+  retrain_gpus: 1,2,3
+  nseg: 15
+  retrain_prefix: srun -N 1 -n 1 -c 8 --overlap --gpus-per-node=4

@@ -1,0 +1,19 @@
+# Weekend matrix: no gate (always), anchor every 20 calls, retraining: anchors without a gate. Uniform step-50 start, 15 segments, initial bundle 41c6d56fe16d.
+host: perlmutter
+name: surrogate_only_anchor20
+params:
+  bundle: /pscratch/sd/d/diawa/eirene_nn/glue2_work/diiid_eirene_v3/bundles/solstice_sources-41c6d56fe16d
+  dump: 1
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  keep_every: 10
+  nseg: 15
+  policy: always
+  replay: 3
+  retrain_config: /pscratch/sd/d/diawa/GLUE/configs/nersc_coupling_surrogate_only_anchor20.yaml
+  retrain_gpus: 1,2,3
+  retrain_interval: 600
+  retrain_prefix: srun -N 1 -n 1 -c 8 --overlap --gpus-per-node=4
+  service_args: --skip-targets 'wneutrals_*' --max-consecutive 20
+  service_prefix: srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstate_step00050
+stage: couple

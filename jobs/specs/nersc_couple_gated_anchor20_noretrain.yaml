@@ -1,0 +1,16 @@
+# Weekend matrix: anchor every 20 calls, NO retraining (fixed run-3 model): isolates the anchor's own effect. Uniform step-50 start, 15 segments, initial bundle 41c6d56fe16d.
+host: perlmutter
+name: gated_anchor20_noretrain
+params:
+  bundle: /pscratch/sd/d/diawa/eirene_nn/glue2_work/diiid_eirene_v3/bundles/solstice_sources-41c6d56fe16d
+  dump: 1
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  keep_every: 10
+  nseg: 15
+  policy: gate
+  replay: 3
+  service_args: --gate-kinds sni,smo,see,sei --skip-targets 'wneutrals_*' --max-consecutive
+    20
+  service_prefix: srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstate_step00050
+stage: couple
