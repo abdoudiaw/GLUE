@@ -1,0 +1,20 @@
+# Dense anchoring: EIRENE forced after every 2 surrogate answers (1 call in 3) + retraining; uniform start; run-3 model.
+host: perlmutter
+name: gated_anchor2
+params:
+  bundle: /pscratch/sd/d/diawa/eirene_nn/glue2_work/diiid_eirene_v3/bundles/solstice_sources-41c6d56fe16d
+  dump: 1
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  keep_every: 10
+  nseg: 15
+  policy: gate
+  replay: 3
+  retrain_config: /pscratch/sd/d/diawa/GLUE/configs/nersc_coupling_gated_anchor2.yaml
+  retrain_gpus: 1,2,3
+  retrain_interval: 600
+  retrain_prefix: srun -N 1 -n 1 -c 16 --mem=0 --overlap --gpus-per-node=4
+  service_args: --gate-kinds sni,smo,see,sei --skip-targets 'wneutrals_*' --max-consecutive
+    2
+  service_prefix: srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstate_step00050
+stage: couple
