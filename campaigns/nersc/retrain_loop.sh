@@ -14,7 +14,8 @@ cd ${GLUE_ROOT:-$SCRATCH/GLUE}
 export PYTHONPATH=$PWD:$PWD/external/solstice/src CUDA_VISIBLE_DEVICES=${RETRAIN_GPUS:-1,2,3}
 while [ ! -e "$RUN_DIR/STOP" ]; do
   echo "=== cycle $(date)"
-  python -m glue2.cli --config "$CONFIG" cycle 2>&1 | tail -20
+  python -m glue2.cli --config "$CONFIG" cycle > "$RUN_DIR/retrain_cycle_$(date +%Y%m%d_%H%M%S).log" 2>&1; rc=$?
+  tail -20 "$(ls -t "$RUN_DIR"/retrain_cycle_*.log | head -1)"; [ $rc -ne 0 ] && echo "cycle exit $rc: full output in $(ls -t "$RUN_DIR"/retrain_cycle_*.log | head -1)"
   sleep $INTERVAL
 done
 echo "stopped $(date)"
