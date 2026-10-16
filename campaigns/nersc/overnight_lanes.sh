@@ -13,4 +13,8 @@ LOGS=/pscratch/sd/d/diawa/eirene_nn/coupling/runs/logs
 ( for r in nn_init_v2_eirene:10 surrogate_only_v2:15; do
     echo "$(date): lane B starts ${r%%:*}"; NSEG=${r##*:} bash campaigns/nersc/couple_chunks.sh ${r%%:*} > $LOGS/chunks-${r%%:*}.out 2>&1
     echo "$(date): lane B finished ${r%%:*}"; done ) &
-wait; echo "$(date): all lanes done"
+wait; echo "$(date): all lanes done; copying states and logs to Dropbox"
+cd /pscratch/sd/d/diawa/eirene_nn/coupling && ~/.local/bin/rclone copy --tpslimit 8 --transfers 4 --include "states/**" --include "segments/**" \
+  --include "decisions.log" --include "service.jsonl" --include "service.out" --include "retrain_loop.log" --include "comparison*.txt" \
+  --exclude "work/**" --exclude "events/**" --exclude "requests/**" --exclude "gated_try1/**" --exclude "surrogate_only_gatedbymistake/**" \
+  runs/ dropbox:SOLPS_DB/coupling_results_20261015/runs/ && echo "$(date): Dropbox copy done"
