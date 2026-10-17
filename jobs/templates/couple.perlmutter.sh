@@ -63,7 +63,7 @@ SVC=$!
 sleep ${service_warmup}
 # ship dumped EIRENE events to $OUT/events while a segment runs (files untouched for 2 min are closed),
 # so the retrain loop can act within a segment instead of only at its end
-( while true; do sleep 120; find $WORK/case/b2mn.exe.dir $WORK/case -maxdepth 1 -name 'eirene_training_v3_*.nc' -mmin +2 -exec mv -t $OUT/events/ {} + 2>/dev/null; done ) &
+( while true; do sleep 120; d=$OUT/events/$(cat $WORK/SEGTAG 2>/dev/null || echo seg_unknown); mkdir -p $d; find $WORK/case/b2mn.exe.dir $WORK/case -maxdepth 1 -name 'eirene_training_v3_*.nc' -mmin +2 -exec mv -t $d/ {} + 2>/dev/null; done ) &
 SHIP=$!
 # the retrain loop (gated run): a separate process on GPUs 1-3, one glue2 cycle every retrain_interval s
 RL=""
@@ -82,7 +82,7 @@ for i in $(seq 1 $NSEG); do
   s=$((step + SEG))
   tag=$(printf %05d $s)
   [ -s $OUT/states/state_$tag ] && { step=$s; prev_state=$OUT/states/state_$tag; continue; }
-  rm -rf $WORK/case; cp -a ${coupling_root}/template_chi1 $WORK/case; cp -p $prev_state $WORK/case/b2fstati
+  rm -rf $WORK/case; cp -a ${coupling_root}/template_chi1 $WORK/case; cp -p $prev_state $WORK/case/b2fstati; echo seg_$tag > $WORK/SEGTAG
   ln -sfn ${coupling_root}/baserun $WORK/baserun
   cd $WORK/case
   sed -i -e "s/^'b2mndr_ntim'.*/'b2mndr_ntim'                      '$SEG'/" \
@@ -100,7 +100,7 @@ for i in $(seq 1 $NSEG); do
   if [ -s b2fstate ] && [ "$(stat -c %s b2fstate)" -gt 1000000 ]; then
     cp -p b2fstate $OUT/states/state_$tag; cp -p b2time.nc $OUT/states/b2time_$tag.nc 2>/dev/null; cp -p b2tallies.nc $OUT/states/b2tallies_$tag.nc 2>/dev/null
     cp -p run.log $OUT/segments/run_$tag.log
-    mv eirene_training_v3_*.nc b2mn.exe.dir/eirene_training_v3_*.nc $OUT/events/ 2>/dev/null
+    mkdir -p $OUT/events/seg_$tag; mv eirene_training_v3_*.nc b2mn.exe.dir/eirene_training_v3_*.nc $OUT/events/seg_$tag/ 2>/dev/null
     [ -f b2mn.exe.dir/eirene_surrogate_decisions.log ] && cat b2mn.exe.dir/eirene_surrogate_decisions.log >> $OUT/decisions.log
   else
     cp -p run.log $OUT/segments/run_$tag.FAILED.log 2>/dev/null; cp -p b2mn.exe.dir/eirene_surrogate_decisions.log $OUT/segments/decisions_$tag.FAILED.log 2>/dev/null

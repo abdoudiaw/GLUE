@@ -1,0 +1,16 @@
+# Regenerate dumped events: 1000 plain EIRENE steps with dumping from the NN-v2 transient at step 6050.
+host: perlmutter
+name: dump_n_06050
+params:
+  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-2942df28b850
+  dump: 1
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  keep_every: 0
+  nseg: 1
+  policy: never
+  replay: 0
+  seg_steps: 1000
+  service_args: --skip-targets 'wneutrals_*'
+  service_prefix: srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/eirene_nn_v2_dump/states/state_06050
+stage: couple
