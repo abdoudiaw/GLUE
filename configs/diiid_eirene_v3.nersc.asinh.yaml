@@ -15,6 +15,7 @@ spec:
   val_fraction: 0.15
   test_fraction: 0.15
   dtype: float32
+  acquired_test_cases: ['dump_u_04050/*', 'eirene_nn_v2_dump/*']   # held-out trajectory segments (uniform 4050-5050, NN-v2 last segment); other acquired cases train
   inputs: [braeir_dni, braeir_vv, braeir_uu, braeir_ww, braeir_up, braeir_fnix, braeir_fniy, braeir_zi,
            braeir_te, braeir_ti, braeir_pr, braeir_rr, braeir_feix, braeir_feiy, braeir_feex, braeir_feey,
            braeir_vol, braeir_bfield, braeir_bpol, braeir_btor, braeir_delta_sheathx, braeir_delta_sheathy,

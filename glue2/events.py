@@ -82,12 +82,19 @@ def file_sha256(path: str | Path, block: int = 1 << 20) -> str:
 
 
 def case_id_for(path: str | Path) -> str:
-    """Nearest enclosing run_* directory, else the parent directory name."""
+    """Nearest enclosing run_* directory, else the parent directory name. A coupled run's event
+    directory (``<run>/events`` or ``<run>/events/seg_<step>``) is named after the run, so that
+    different runs' events do not collapse into one case."""
     path = Path(path).resolve()
     for parent in path.parents:
         if CASE_DIR_RE.match(parent.name):
             return parent.name
-    return path.parent.name
+    d = path.parent
+    if d.name == "events":
+        return f"{d.parent.name}/events"
+    if d.name.startswith("seg_") and d.parent.name == "events":
+        return f"{d.parent.parent.name}/events/{d.name}"
+    return d.name
 
 
 def _float_array(var) -> np.ndarray | None:

@@ -22,6 +22,7 @@ rest is training data.
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import os
@@ -48,11 +49,14 @@ class SnapshotSpec:
     test_fraction: float = 0.15
     split_salt: str = "glue2"
     dtype: str = "float32"
+    acquired_test_cases: tuple[str, ...] = ()   # fnmatch patterns on case_id: when set, acquired (al_request) cases
+                                                # matching one are acq_test and all other acquired cases train,
+                                                # instead of the hash split (explicit held-out trajectory segments)
 
     @classmethod
     def from_dict(cls, d: dict) -> "SnapshotSpec":
         d = dict(d)
-        for key in ("inputs", "targets", "event_kinds"):
+        for key in ("inputs", "targets", "event_kinds", "acquired_test_cases"):
             if key in d:
                 d[key] = tuple(d[key])
         return cls(**d)
@@ -75,7 +79,12 @@ def assign_splits(case_origins: dict[str, set[str]], spec: SnapshotSpec) -> dict
     for case, origins in case_origins.items():
         split = hash_split(case, spec)
         if origins == {"al_request"}:
-            split = "acq_test" if split == "test" else "train"
+            if spec.acquired_test_cases:
+                held = any(fnmatch.fnmatch(case, pat) or fnmatch.fnmatch(Path(case).name, pat)
+                           for pat in spec.acquired_test_cases)
+                split = "acq_test" if held else "train"
+            else:
+                split = "acq_test" if split == "test" else "train"
         out[case] = split
     return out
 
