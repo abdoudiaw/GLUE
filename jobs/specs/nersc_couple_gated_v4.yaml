@@ -9,7 +9,7 @@ params:
   replay: 3
   dump: 1
   policy: gate
-  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-0e5f2a3092ad
+  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-f1412eecc875
   service_args: "--gate-kinds sni,smo,see,sei --skip-targets 'wneutrals_*'"
   keep_every: 10
   retrain_config: /pscratch/sd/d/diawa/GLUE/configs/nersc_coupling_v4.yaml   # the retrain loop beside the run (GPUs 1-3)
