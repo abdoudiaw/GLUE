@@ -10,7 +10,7 @@ params:
   dump: 1
   policy: gate
   bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-f1412eecc875
-  service_args: "--gate-kinds sni,smo,see,sei --skip-targets 'wneutrals_*' --max-consecutive 20"
+  service_args: "--gate-kinds sni,smo,see,sei --skip-targets 'wneutrals_*' --keep-strata 6C,7V --keep-momentum-slots 1,2 --max-consecutive 20"
   keep_every: 10
   retrain_config: /pscratch/sd/d/diawa/GLUE/configs/nersc_coupling_v4_anchor20.yaml   # the retrain loop beside the run (GPUs 1-3)
   retrain_interval: 600

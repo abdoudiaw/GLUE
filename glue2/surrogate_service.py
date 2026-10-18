@@ -73,9 +73,14 @@ def gate_score(bundle, pred, kinds: list[str] | None):
     return score, score <= bundle.fussiness and float(pred.novelty[0]) <= bundle.novelty_max
 
 
-def write_answer(bundle, request: Path, answer: Path, pred, skip: list[str] | None = None) -> dict:
+def write_answer(bundle, request: Path, answer: Path, pred, skip: list[str] | None = None,
+                 keep_strata: list[str] | None = None, keep_momentum_slots: list[int] | None = None) -> dict:
     """Request file + prediction -> answer file (temporary name, then renamed).
-    Variables matching a `skip` pattern keep the request's values."""
+    Variables matching a `skip` pattern keep the request's values. `keep_strata` (stratum type codes such as
+    6C, 7V) and `keep_momentum_slots` (1 radial, 2 diamagnetic) keep those slices of the source arrays from
+    the request, i.e. from the last EIRENE call: B2.5 rescales the puff and volume-recombination strata by
+    the actual puff and recombination rates, so they matter more than their nominal flux suggests, and the
+    model learns them with the floor weight."""
     import fnmatch
     tmp = answer.with_suffix(".nc.tmp")
     shutil.copyfile(request, tmp)
@@ -90,6 +95,14 @@ def write_answer(bundle, request: Path, answer: Path, pred, skip: list[str] | No
             new = np.asarray(pred.mean[name][0], dtype=np.float64)
             if new.shape != var.shape:
                 raise ValueError(f"{name}: bundle shape {new.shape} vs request {var.shape}")
+            if name.startswith("eirbra_") and (keep_strata or keep_momentum_slots):
+                old = np.asarray(var[...], dtype=np.float64)
+                for code in keep_strata or []:
+                    k = bundle.keep[bundle.strata.index(code)]          # stratum slot of that type code
+                    new[k] = old[k]
+                if new.ndim == 4 and new.shape[1] > 1:                  # (slot, momentum slot, y, x)
+                    for m in keep_momentum_slots or []:
+                        new[:, m] = old[:, m]
             var[...] = new
             summary[name] = float(np.abs(new).sum())
         ds.setncattr("glue2_surrogate", json.dumps({"bundle_id": bundle.bundle_id, "score": float(pred.score[0]),
@@ -101,7 +114,8 @@ def write_answer(bundle, request: Path, answer: Path, pred, skip: list[str] | No
 def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_path: str | None,
           poll: float = 0.05, once: bool = False, reload_file: str | None = None,
           gate_kinds: list[str] | None = None, skip_targets: list[str] | None = None,
-          keep_requests: str | None = None, max_consecutive: int = 0, keep_every: int = 1) -> int:
+          keep_requests: str | None = None, max_consecutive: int = 0, keep_every: int = 1,
+          keep_strata: list[str] | None = None, keep_momentum_slots: list[int] | None = None) -> int:
     run = Path(run_dir)
     streak = 0
     keep = Path(keep_requests) if keep_requests else None
@@ -148,7 +162,7 @@ def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_pa
             if keep and call % max(int(keep_every), 1) == 0:
                 shutil.copyfile(req, keep / f"request_call{call:06d}.nc")
             if use:
-                rec["sums"] = write_answer(bundle, req, ans, pred, skip_targets)
+                rec["sums"] = write_answer(bundle, req, ans, pred, skip_targets, keep_strata, keep_momentum_slots)
             else:
                 fb.touch()
             req.unlink(missing_ok=True)
@@ -184,12 +198,18 @@ def main(argv=None) -> int:
     ap.add_argument("--keep-every", type=int, default=1, help="keep every N-th request only (with --keep-requests)")
     ap.add_argument("--max-consecutive", type=int, default=0,
                     help="force an EIRENE call after this many consecutive surrogate answers (0: never)")
+    ap.add_argument("--keep-strata", default=None,
+                    help="comma-separated stratum type codes (e.g. 6C,7V) whose source slices keep the request's values")
+    ap.add_argument("--keep-momentum-slots", default=None,
+                    help="comma-separated momentum slots (1 radial, 2 diamagnetic) kept from the request")
     a = ap.parse_args(argv)
     policy = "always" if a.always else "never" if a.never else "gate"
     return serve(a.bundle, a.run_dir, a.device, policy, a.log, once=a.once, reload_file=a.reload_file,
                  gate_kinds=a.gate_kinds.split(",") if a.gate_kinds else None,
                  skip_targets=a.skip_targets.split(",") if a.skip_targets else None,
-                 keep_requests=a.keep_requests, max_consecutive=a.max_consecutive, keep_every=a.keep_every)
+                 keep_requests=a.keep_requests, max_consecutive=a.max_consecutive, keep_every=a.keep_every,
+                 keep_strata=a.keep_strata.split(",") if a.keep_strata else None,
+                 keep_momentum_slots=[int(x) for x in a.keep_momentum_slots.split(",")] if a.keep_momentum_slots else None)
 
 
 if __name__ == "__main__":
