@@ -116,7 +116,7 @@ def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_pa
           gate_kinds: list[str] | None = None, skip_targets: list[str] | None = None,
           keep_requests: str | None = None, max_consecutive: int = 0, keep_every: int = 1,
           keep_strata: list[str] | None = None, keep_momentum_slots: list[int] | None = None,
-          oracle_events: str | None = None) -> int:
+          oracle_events: str | None = None, debias: str | None = None) -> int:
     """oracle_events: directory of dumped EIRENE events of the same trajectory; the answer to call N is then the
     recorded EIRENE output of call N (every target, tallies included) instead of the model's prediction. A
     diagnostic of the coupling path itself: with the oracle the run must reproduce the EIRENE-driven run."""
@@ -128,6 +128,7 @@ def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_pa
     bundle = load_bundle(bundle_dir)
     if device and hasattr(bundle, "device"):
         bundle.device = device
+    bias = dict(np.load(debias)) if debias else None     # diagnostic: mean (prediction - EIRENE) per target, event layout
     log = open(log_path or run / "eirene_surrogate_service.jsonl", "a")
     print(f"surrogate service: bundle {bundle.bundle_id}, watching {run}, policy {policy}", flush=True)
     req, ans, fb = run / REQUEST, run / ANSWER, run / FALLBACK
@@ -153,6 +154,10 @@ def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_pa
                 call = int(ds.getncattr("b2_call_index"))
             inputs = {k: v[None] for k, v in read_arrays(req, bundle.meta["inputs"]).items()}
             pred = bundle.predict(inputs)
+            if bias:
+                for k, v in bias.items():
+                    if k in pred.mean:
+                        pred.mean[k] = pred.mean[k] - v[None]
             score, ok = gate_score(bundle, pred, gate_kinds)
             use = ok if policy == "gate" else policy == "always"
             anchor = bool(max_consecutive and use and streak >= max_consecutive)
@@ -215,6 +220,7 @@ def main(argv=None) -> int:
                     help="comma-separated stratum type codes (e.g. 6C,7V) whose source slices keep the request's values")
     ap.add_argument("--oracle-events", default=None,
                     help="diagnostic: answer call N with the recorded EIRENE event of call N from this directory")
+    ap.add_argument("--debias", default=None, help="diagnostic: .npz of mean (prediction - EIRENE) per target to subtract")
     ap.add_argument("--keep-momentum-slots", default=None,
                     help="comma-separated momentum slots (1 radial, 2 diamagnetic) kept from the request")
     a = ap.parse_args(argv)
@@ -225,7 +231,7 @@ def main(argv=None) -> int:
                  keep_requests=a.keep_requests, max_consecutive=a.max_consecutive, keep_every=a.keep_every,
                  keep_strata=a.keep_strata.split(",") if a.keep_strata else None,
                  keep_momentum_slots=[int(x) for x in a.keep_momentum_slots.split(",")] if a.keep_momentum_slots else None,
-                 oracle_events=a.oracle_events)
+                 oracle_events=a.oracle_events, debias=a.debias)
 
 
 if __name__ == "__main__":
