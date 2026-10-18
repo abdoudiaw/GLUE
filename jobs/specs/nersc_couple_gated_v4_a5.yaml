@@ -1,0 +1,19 @@
+# gated_v4 with an EIRENE anchor after every 5 consecutive surrogate steps (bounds the drift from the surrogate's persistent error pattern).
+name: gated_v4_a5
+stage: couple
+host: perlmutter
+params:
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstate_step00050
+  replay: 3
+  dump: 1
+  policy: gate
+  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-f1412eecc875
+  service_args: "--gate-kinds sni,smo,see,sei --skip-targets 'wneutrals_*' --keep-strata 6C,7V --keep-momentum-slots 1,2 --max-consecutive 5"
+  keep_every: 10
+  retrain_config: /pscratch/sd/d/diawa/GLUE/configs/nersc_coupling_v4_a5.yaml   # the retrain loop beside the run (GPUs 1-3)
+  retrain_interval: 600
+  # interactive route (campaigns/nersc/couple_salloc.sh): the driver runs where salloc runs, the service
+  # and B2.5 are sibling job steps on the node, the case lives on scratch
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  service_prefix: "srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1"
+  retrain_gpus: "0"      # the loop runs beside the driver (this node's GPU); 1,2,3 when the driver runs on the compute node

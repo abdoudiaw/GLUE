@@ -1,0 +1,18 @@
+# 300-step kind-isolation test: surrogate all four kinds, EIRENE every other step (reference for the one-kind tests).
+name: t_all_a1
+stage: couple
+host: perlmutter
+params:
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstate_step00050
+  replay: 3
+  dump: 1
+  policy: gate
+  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-f1412eecc875
+  service_args: "--gate-kinds sni,smo,see,sei --always --skip-targets 'wneutrals_*' --max-consecutive 1 --keep-strata 6C,7V --keep-momentum-slots 1,2"
+  keep_every: 10
+  seg_steps: 300
+  nseg: 1
+  # interactive route (campaigns/nersc/couple_salloc.sh): the driver runs where salloc runs, the service
+  # and B2.5 are sibling job steps on the node, the case lives on scratch
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  service_prefix: "srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1"

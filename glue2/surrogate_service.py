@@ -45,7 +45,7 @@ import netCDF4
 import numpy as np
 
 from glue2.events import read_arrays
-from glue2.learner import load_bundle
+from glue2.learner import Prediction, load_bundle
 
 REQUEST = "eirene_surrogate_request.nc"
 ANSWER = "eirene_surrogate_answer.nc"
@@ -115,7 +115,11 @@ def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_pa
           poll: float = 0.05, once: bool = False, reload_file: str | None = None,
           gate_kinds: list[str] | None = None, skip_targets: list[str] | None = None,
           keep_requests: str | None = None, max_consecutive: int = 0, keep_every: int = 1,
-          keep_strata: list[str] | None = None, keep_momentum_slots: list[int] | None = None) -> int:
+          keep_strata: list[str] | None = None, keep_momentum_slots: list[int] | None = None,
+          oracle_events: str | None = None) -> int:
+    """oracle_events: directory of dumped EIRENE events of the same trajectory; the answer to call N is then the
+    recorded EIRENE output of call N (every target, tallies included) instead of the model's prediction. A
+    diagnostic of the coupling path itself: with the oracle the run must reproduce the EIRENE-driven run."""
     run = Path(run_dir)
     streak = 0
     keep = Path(keep_requests) if keep_requests else None
@@ -161,7 +165,16 @@ def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_pa
                               for n, e in pred.errbar.items()}}
             if keep and call % max(int(keep_every), 1) == 0:
                 shutil.copyfile(req, keep / f"request_call{call:06d}.nc")
-            if use:
+            if use and oracle_events:
+                import glob as _glob
+                hits = sorted(_glob.glob(os.path.join(oracle_events, f"*b2call_{call:08d}_*.nc")))
+                if not hits:
+                    raise FileNotFoundError(f"oracle: no event for call {call} in {oracle_events}")
+                truth = read_arrays(hits[0], bundle.meta["targets"])
+                oracle = Prediction({k: np.asarray(v)[None] for k, v in truth.items()}, {}, np.zeros(1), np.zeros(1), np.ones(1, bool))
+                rec["sums"] = write_answer(bundle, req, ans, oracle, skip_targets, keep_strata, keep_momentum_slots)
+                rec["oracle"] = os.path.basename(hits[0])
+            elif use:
                 rec["sums"] = write_answer(bundle, req, ans, pred, skip_targets, keep_strata, keep_momentum_slots)
             else:
                 fb.touch()
@@ -200,6 +213,8 @@ def main(argv=None) -> int:
                     help="force an EIRENE call after this many consecutive surrogate answers (0: never)")
     ap.add_argument("--keep-strata", default=None,
                     help="comma-separated stratum type codes (e.g. 6C,7V) whose source slices keep the request's values")
+    ap.add_argument("--oracle-events", default=None,
+                    help="diagnostic: answer call N with the recorded EIRENE event of call N from this directory")
     ap.add_argument("--keep-momentum-slots", default=None,
                     help="comma-separated momentum slots (1 radial, 2 diamagnetic) kept from the request")
     a = ap.parse_args(argv)
@@ -209,7 +224,8 @@ def main(argv=None) -> int:
                  skip_targets=a.skip_targets.split(",") if a.skip_targets else None,
                  keep_requests=a.keep_requests, max_consecutive=a.max_consecutive, keep_every=a.keep_every,
                  keep_strata=a.keep_strata.split(",") if a.keep_strata else None,
-                 keep_momentum_slots=[int(x) for x in a.keep_momentum_slots.split(",")] if a.keep_momentum_slots else None)
+                 keep_momentum_slots=[int(x) for x in a.keep_momentum_slots.split(",")] if a.keep_momentum_slots else None,
+                 oracle_events=a.oracle_events)
 
 
 if __name__ == "__main__":
