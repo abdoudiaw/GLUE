@@ -30,7 +30,7 @@ spec:
 
 learner: solstice_sources
 learner_params:
-  warm_start: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/BUNDLE_V4   # the members to fine-tune
+  warm_start: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-eda72c5956c9   # the members to fine-tune
   epochs: 30
   train_config: external/solstice/configs/training/eirene_sources_asinh.yaml   # the v4 members use the asinh target transform
   lr: 3.0e-4
