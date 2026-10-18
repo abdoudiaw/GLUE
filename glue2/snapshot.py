@@ -160,6 +160,9 @@ def build_snapshot(catalog: Catalog, spec: SnapshotSpec, root: str | Path,
     names = spec.inputs + spec.targets
     shapes, selected, excluded = None, [], []
     for row in rows:
+        if not os.path.exists(row["path"]):                 # a deleted run: its catalog rows are stale
+            excluded.append({"event_id": row["event_id"], "reason": "file missing"})
+            continue
         try:
             got = variable_shapes(row["path"], names)
         except (KeyError, OSError) as exc:
