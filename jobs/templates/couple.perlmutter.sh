@@ -44,7 +44,7 @@ export PYTHONPATH=${glue_root}:${glue_root}/external/solstice/src SOLSTICE_DATA=
 # the bundle: the spec's, or (retrain loop) the bundle the catalog has promoted since, so that a later
 # chunk of a run resumed with the same script continues with the retrained model
 BUNDLE=${bundle}
-if [ -n "${retrain_config}" ]; then
+if [ -n "${retrain_config}" ] && ls $OUT/states/state_* >/dev/null 2>&1; then   # a resumed run continues with the promoted model; the first chunk uses the spec's bundle
   P=$(python -c 'import sys, yaml
 from glue2.catalog import Catalog
 cfg = yaml.safe_load(open(sys.argv[1]))
