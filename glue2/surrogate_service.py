@@ -116,7 +116,7 @@ def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_pa
           gate_kinds: list[str] | None = None, skip_targets: list[str] | None = None,
           keep_requests: str | None = None, max_consecutive: int = 0, keep_every: int = 1,
           keep_strata: list[str] | None = None, keep_momentum_slots: list[int] | None = None,
-          oracle_events: str | None = None, debias: str | None = None) -> int:
+          oracle_events: str | None = None, debias: str | None = None, oracle_window: int = 0) -> int:
     """oracle_events: directory of dumped EIRENE events of the same trajectory; the answer to call N is then the
     recorded EIRENE output of call N (every target, tallies included) instead of the model's prediction. A
     diagnostic of the coupling path itself: with the oracle the run must reproduce the EIRENE-driven run."""
@@ -176,6 +176,15 @@ def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_pa
                 if not hits:
                     raise FileNotFoundError(f"oracle: no event for call {call} in {oracle_events}")
                 truth = read_arrays(hits[0], bundle.meta["targets"])
+                if oracle_window:                      # smooth oracle: running mean over neighbouring calls (unbiased, noise-free)
+                    neigh = [sorted(_glob.glob(os.path.join(oracle_events, f"*b2call_{c:08d}_*.nc"))) for c in range(call - oracle_window, call + oracle_window + 1)]
+                    neigh = [h[0] for h in neigh if h]
+                    acc = {k: np.zeros_like(np.asarray(v, dtype=np.float64)) for k, v in truth.items()}
+                    for h in neigh:
+                        for k, v in read_arrays(h, bundle.meta["targets"]).items():
+                            acc[k] += np.asarray(v, dtype=np.float64)
+                    truth = {k: v / len(neigh) for k, v in acc.items()}
+                    rec["oracle_window_n"] = len(neigh)
                 oracle = Prediction({k: np.asarray(v)[None] for k, v in truth.items()}, {}, np.zeros(1), np.zeros(1), np.ones(1, bool))
                 rec["sums"] = write_answer(bundle, req, ans, oracle, skip_targets, keep_strata, keep_momentum_slots)
                 rec["oracle"] = os.path.basename(hits[0])
@@ -220,6 +229,7 @@ def main(argv=None) -> int:
                     help="comma-separated stratum type codes (e.g. 6C,7V) whose source slices keep the request's values")
     ap.add_argument("--oracle-events", default=None,
                     help="diagnostic: answer call N with the recorded EIRENE event of call N from this directory")
+    ap.add_argument("--oracle-window", type=int, default=0, help="with --oracle-events: answer with the mean of calls N-w..N+w")
     ap.add_argument("--debias", default=None, help="diagnostic: .npz of mean (prediction - EIRENE) per target to subtract")
     ap.add_argument("--keep-momentum-slots", default=None,
                     help="comma-separated momentum slots (1 radial, 2 diamagnetic) kept from the request")
@@ -231,7 +241,7 @@ def main(argv=None) -> int:
                  keep_requests=a.keep_requests, max_consecutive=a.max_consecutive, keep_every=a.keep_every,
                  keep_strata=a.keep_strata.split(",") if a.keep_strata else None,
                  keep_momentum_slots=[int(x) for x in a.keep_momentum_slots.split(",")] if a.keep_momentum_slots else None,
-                 oracle_events=a.oracle_events, debias=a.debias)
+                 oracle_events=a.oracle_events, debias=a.debias, oracle_window=a.oracle_window)
 
 
 if __name__ == "__main__":
