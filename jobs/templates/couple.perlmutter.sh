@@ -57,7 +57,7 @@ echo "bundle: $BUNDLE"
 # the service, on GPU 0, watching the case's b2mn.exe.dir for the whole job
 mkdir -p $WORK/case/b2mn.exe.dir
 CUDA_VISIBLE_DEVICES=0 ${service_prefix} python -m glue2.surrogate_service --bundle $BUNDLE --run-dir $WORK/case/b2mn.exe.dir \
-   --device cuda --log $OUT/service.jsonl --reload-file $OUT/reload_bundle \
+   --device ${service_device} --log $OUT/service.jsonl --reload-file $OUT/reload_bundle \
    --keep-requests $OUT/requests --keep-every ${keep_every} ${policy_flag} ${service_args} > $OUT/service.out 2>&1 &
 SVC=$!
 sleep ${service_warmup}
