@@ -31,7 +31,7 @@ spec:
 learner: solstice_sources
 learner_params:
   warm_start: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-f1412eecc875   # the members to fine-tune
-  epochs: 30
+  epochs: 20
   train_config: external/solstice/configs/training/eirene_sources_asinh.yaml   # the v4 members use the asinh target transform
   lr: 3.0e-4
   max_hours: 1.0
@@ -41,9 +41,9 @@ learner_params:
   novelty_max: 1.0
   knn: 5
   device: cuda
-  train_jobs: 3                   # members fine-tuned concurrently ...
-  train_devices: [cuda:1, cuda:2, cuda:3]   # ... on the coupled node's idle GPUs (the service holds GPU 0) ...
-  train_prefix: "srun -N 1 -n 1 -c 8 --overlap --gpus-per-node=4"   # ... as job steps of the run's allocation
+  train_jobs: 1                   # members fine-tuned concurrently ...
+  train_devices: [cuda:0, cuda:1]   # ... on the coupled node's idle GPUs (the service holds GPU 0) ...
+  train_prefix: ""   # the whole loop runs inside a shared GPU allocation (gated_v4 case on a CPU node)   # ... as job steps of the run's allocation
 retrain_min_new: 50                # fallback events per retrain
 promote_tolerance: 0.05
 promote_require_improvement: false   # the held-out splits do not cover the run's regime (as in the weekend configs)
