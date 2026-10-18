@@ -78,6 +78,7 @@ step=$(basename $START | sed 's/.*step0*//; s/.*state_0*//; s/[^0-9].*//')   # .
 [ -z "$step" ] && step=50
 prev_state=$START
 echo "=== $NAME start $(date): from $START (step $step), $NSEG x $SEG steps"
+python -m glue2.runstatus start $OUT spec="${spec_path}" bundle="$BUNDLE" start_state="$START" policy="${policy}" service_args="${service_args}" nseg="$NSEG" seg_steps="$SEG" retrain_config="${retrain_config}" host=perlmutter job_ids="$SLURM_JOB_ID" >/dev/null 2>&1 || true
 for i in $(seq 1 $NSEG); do
   s=$((step + SEG))
   tag=$(printf %05d $s)
@@ -107,7 +108,9 @@ for i in $(seq 1 $NSEG); do
     echo "segment to step $s FAILED; stopping"; kill $SVC $SHIP; [ -n "$RL" ] && { touch $OUT/STOP; kill $RL; }; exit 3
   fi
   step=$s; prev_state=$OUT/states/state_$tag
+  python -m glue2.runstatus refresh $OUT note="segment to step $tag done (job $SLURM_JOB_ID)" >/dev/null 2>&1 || true
 done
 kill $SVC $SHIP 2>/dev/null
 [ -n "$RL" ] && { touch $OUT/STOP; kill $RL 2>/dev/null; }
 echo "=== $NAME done $(date): states $(ls $OUT/states | grep -c state_)"
+python -m glue2.runstatus refresh $OUT >/dev/null 2>&1 || true

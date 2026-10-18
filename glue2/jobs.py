@@ -118,7 +118,9 @@ def render(spec_path: str | Path, out_dir: str | Path | None = None) -> Path:
     tpl = JOBS / "templates" / f"{spec['stage']}.{spec['host']}.{EXT[spec['stage']]}"
     if not tpl.exists():
         raise FileNotFoundError(f"no template {tpl}")
-    text = _Tpl(tpl.read_text()).safe_substitute(variables(spec, host))
+    v = variables(spec, host)
+    v.setdefault("spec_path", str(Path(spec_path)))          # recorded in the run's status file
+    text = _Tpl(tpl.read_text()).safe_substitute(v)
     out = Path(out_dir or JOBS / "rendered") / f"{spec['name']}.{EXT[spec['stage']]}"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text)
