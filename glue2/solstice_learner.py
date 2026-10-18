@@ -218,7 +218,14 @@ class SolsticeSourcesBundle:
         """Native (case, cell, channel) -> the trainer's standardized metric (masked);
         tallies=True for (case, surface, tally channel)."""
         n0 = self.members[0].g_norm if tallies else self.members[0].out_norm
-        return (arr / n0.std) * n0.mask
+        den = n0.std
+        scale = getattr(n0, "scale", None)
+        if scale is not None and getattr(n0, "transforms", None):
+            # asinh channels are standardized after y -> asinh(y / scale): a native difference maps to about
+            # delta / (scale * std) there, which keeps the statistic dimensionless (native units of the
+            # momentum and energy sources are 1e-24 .. 1e-19 and would fall under the calibration floors)
+            den = den * np.where(np.isfinite(scale) & (scale > 0), scale, 1.0)
+        return (arr / den) * n0.mask
 
     def kind_stat(self, arr_n: np.ndarray, garr_n: np.ndarray | None = None) -> dict[str, np.ndarray]:
         """Mean over the masked entries of each source kind (and tally) -> {kind: (case,)}."""
