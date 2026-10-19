@@ -172,9 +172,13 @@ def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_pa
                 shutil.copyfile(req, keep / f"request_call{call:06d}.nc")
             if use and oracle_events:
                 import glob as _glob
-                hits = sorted(_glob.glob(os.path.join(oracle_events, f"*b2call_{call:08d}_*.nc")))
+                odir = oracle_events
+                if "{seg}" in odir:                      # per-segment reference events: the run's current segment tag
+                    tagf = Path(run_dir).resolve().parent.parent / "SEGTAG"
+                    odir = odir.replace("{seg}", tagf.read_text().strip() if tagf.exists() else "seg_unknown")
+                hits = sorted(_glob.glob(os.path.join(odir, f"*b2call_{call:08d}_*.nc")))
                 if not hits:
-                    raise FileNotFoundError(f"oracle: no event for call {call} in {oracle_events}")
+                    raise FileNotFoundError(f"oracle: no event for call {call} in {odir}")
                 truth = read_arrays(hits[0], bundle.meta["targets"])
                 if oracle_window:                      # smooth oracle: running mean over neighbouring calls (unbiased, noise-free)
                     neigh = [sorted(_glob.glob(os.path.join(oracle_events, f"*b2call_{c:08d}_*.nc"))) for c in range(call - oracle_window, call + oracle_window + 1)]
