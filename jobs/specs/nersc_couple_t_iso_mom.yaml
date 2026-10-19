@@ -1,0 +1,19 @@
+# 300-step isolation test: recorded EIRENE answers (reference, steps 50-350) with only [--keep-momentum-slots 1,2] retained.
+name: t_iso_mom
+stage: couple
+host: perlmutter
+params:
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/states/b2fstate_step00050
+  replay: 3
+  dump: 1
+  policy: gate
+  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-f1412eecc875
+  service_args: "--device cpu --gate-kinds sni,smo,see,sei --always --oracle-events /pscratch/sd/d/diawa/eirene_nn/coupling/runs/dump_u_00050/events/seg_01050 --keep-momentum-slots 1,2"
+  keep_every: 10
+  seg_steps: 300
+  nseg: 1
+  # interactive route (campaigns/nersc/couple_salloc.sh): the driver runs where salloc runs, the service
+  # and B2.5 are sibling job steps on the node, the case lives on scratch
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  service_prefix: "srun -N 1 -n 1 -c 32 --overlap"   # CPU interactive node
+  service_device: cpu

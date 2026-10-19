@@ -8,11 +8,12 @@ params:
   dump: 1
   policy: gate
   bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-f1412eecc875
-  service_args: "--gate-kinds sni,smo,see,sei --always --oracle-events /pscratch/sd/d/diawa/eirene_nn/coupling/oracle_ref/{seg}"
+  service_args: "--device cpu --gate-kinds sni,smo,see,sei --always --oracle-events /pscratch/sd/d/diawa/eirene_nn/coupling/oracle_ref/{seg}"
   keep_every: 10
   seg_steps: 1000
   nseg: 8
   # interactive route (campaigns/nersc/couple_salloc.sh): the driver runs where salloc runs, the service
   # and B2.5 are sibling job steps on the node, the case lives on scratch
   exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
-  service_prefix: "srun -N 1 -n 1 -c 4 --overlap --gpus-per-node=1"
+  service_prefix: "srun -N 1 -n 1 -c 32 --overlap"   # CPU interactive node
+  service_device: cpu

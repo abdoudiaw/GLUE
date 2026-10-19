@@ -116,7 +116,8 @@ def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_pa
           gate_kinds: list[str] | None = None, skip_targets: list[str] | None = None,
           keep_requests: str | None = None, max_consecutive: int = 0, keep_every: int = 1,
           keep_strata: list[str] | None = None, keep_momentum_slots: list[int] | None = None,
-          oracle_events: str | None = None, debias: str | None = None, oracle_window: int = 0) -> int:
+          oracle_events: str | None = None, oracle_model_targets: list[str] | None = None,
+          oracle_model_strata: list[str] | None = None, debias: str | None = None, oracle_window: int = 0) -> int:
     """oracle_events: directory of dumped EIRENE events of the same trajectory; the answer to call N is then the
     recorded EIRENE output of call N (every target, tallies included) instead of the model's prediction. A
     diagnostic of the coupling path itself: with the oracle the run must reproduce the EIRENE-driven run."""
@@ -189,6 +190,17 @@ def serve(bundle_dir: str, run_dir: str, device: str | None, policy: str, log_pa
                             acc[k] += np.asarray(v, dtype=np.float64)
                     truth = {k: v / len(neigh) for k, v in acc.items()}
                     rec["oracle_window_n"] = len(neigh)
+                if oracle_model_targets or oracle_model_strata:  # mixed oracle: the parts under test come from the model
+                    import fnmatch as _fn
+                    truth = {k: np.array(v, dtype=np.float64) for k, v in truth.items()}
+                    for name in truth:
+                        if any(_fn.fnmatch(name, pat) for pat in (oracle_model_targets or [])):
+                            truth[name] = np.asarray(pred.mean[name][0], dtype=np.float64)
+                        elif name.startswith("eirbra_"):
+                            for code in oracle_model_strata or []:
+                                k = bundle.keep[bundle.strata.index(code)]
+                                truth[name][k] = np.asarray(pred.mean[name][0], dtype=np.float64)[k]
+                    rec["oracle_model"] = {"targets": oracle_model_targets, "strata": oracle_model_strata}
                 oracle = Prediction({k: np.asarray(v)[None] for k, v in truth.items()}, {}, np.zeros(1), np.zeros(1), np.ones(1, bool))
                 rec["sums"] = write_answer(bundle, req, ans, oracle, skip_targets, keep_strata, keep_momentum_slots)
                 rec["oracle"] = os.path.basename(hits[0])
@@ -235,6 +247,10 @@ def main(argv=None) -> int:
                     help="diagnostic: answer call N with the recorded EIRENE event of call N from this directory")
     ap.add_argument("--oracle-window", type=int, default=0, help="with --oracle-events: answer with the mean of calls N-w..N+w")
     ap.add_argument("--debias", default=None, help="diagnostic: .npz of mean (prediction - EIRENE) per target to subtract")
+    ap.add_argument("--oracle-model-targets", default=None,
+                    help="diagnostic, with --oracle-events: comma-separated target patterns answered by the model instead")
+    ap.add_argument("--oracle-model-strata", default=None,
+                    help="diagnostic, with --oracle-events: stratum codes (e.g. 6C,7V) whose source slices come from the model")
     ap.add_argument("--keep-momentum-slots", default=None,
                     help="comma-separated momentum slots (1 radial, 2 diamagnetic) kept from the request")
     a = ap.parse_args(argv)
@@ -245,7 +261,9 @@ def main(argv=None) -> int:
                  keep_requests=a.keep_requests, max_consecutive=a.max_consecutive, keep_every=a.keep_every,
                  keep_strata=a.keep_strata.split(",") if a.keep_strata else None,
                  keep_momentum_slots=[int(x) for x in a.keep_momentum_slots.split(",")] if a.keep_momentum_slots else None,
-                 oracle_events=a.oracle_events, debias=a.debias, oracle_window=a.oracle_window)
+                 oracle_events=a.oracle_events,
+                 oracle_model_targets=a.oracle_model_targets.split(",") if a.oracle_model_targets else None,
+                 oracle_model_strata=a.oracle_model_strata.split(",") if a.oracle_model_strata else None, debias=a.debias, oracle_window=a.oracle_window)
 
 
 if __name__ == "__main__":
