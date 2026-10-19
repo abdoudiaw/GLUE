@@ -83,7 +83,7 @@ for i in $(seq 1 $NSEG); do
   s=$((step + SEG))
   tag=$(printf %05d $s)
   [ -s $OUT/states/state_$tag ] && { step=$s; prev_state=$OUT/states/state_$tag; continue; }
-  rm -rf $WORK/case; cp -a ${coupling_root}/template_chi1 $WORK/case; cp -p $prev_state $WORK/case/b2fstati; echo seg_$tag > $WORK/SEGTAG
+  rm -rf $WORK/case; cp -a ${coupling_root}/${case_template} $WORK/case; cp -p $prev_state $WORK/case/b2fstati; echo seg_$tag > $WORK/SEGTAG
   ln -sfn ${coupling_root}/baserun $WORK/baserun
   cd $WORK/case
   sed -i -e "s/^'b2mndr_ntim'.*/'b2mndr_ntim'                      '$SEG'/" \

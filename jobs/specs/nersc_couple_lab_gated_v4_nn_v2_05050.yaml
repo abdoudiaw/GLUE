@@ -1,0 +1,18 @@
+# Fresh EIRENE labels on a drifted state (gated_v4_nn_v2 step 5050): 10 calls on the identical state + 50 EIRENE steps, all dumped.
+name: lab_gated_v4_nn_v2_05050
+stage: couple
+host: perlmutter
+params:
+  start_state: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/gated_v4_nn_v2/states/state_05050
+  replay: 0
+  dump: 1
+  policy: never
+  bundle: /pscratch/sd/d/diawa/eirene_nn/runs/bundles/solstice_sources-f1412eecc875
+  service_args: "--device cpu"
+  keep_every: 0
+  nseg: 1
+  seg_steps: 50
+  case_template: template_chi1_rep10
+  exchange_dir: /pscratch/sd/d/diawa/eirene_nn/coupling/runs/work
+  service_prefix: "srun -N 1 -n 1 -c 2 --overlap"   # CPU interactive node (EIRENE every step: the service is never asked)
+  service_device: cpu
